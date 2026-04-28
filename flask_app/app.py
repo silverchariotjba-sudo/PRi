@@ -1,4 +1,4 @@
-﻿from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file
 import os
 import sqlite3
 import json
@@ -104,6 +104,19 @@ def init_db():
             done        INTEGER NOT NULL DEFAULT 0,
             sort_order  INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (pr_id) REFERENCES pr(id) ON DELETE CASCADE
+        )
+    """)
+    
+    # Financial evaluation table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS financial_evaluation (
+            id          TEXT PRIMARY KEY,
+            pr_id       TEXT,
+            title       TEXT NOT NULL,
+            created_date TEXT NOT NULL,
+            oi_data     TEXT,
+            oa1_data    TEXT,
+            oa2_data    TEXT
         )
     """)
     conn.commit()
@@ -505,214 +518,13 @@ def calculate_kpi_delay(pr_data, tasks: dict) -> dict:
 
 # ─── ROUTES ─────────────────────────────────��─────────────────────────────────
 
+@app.route("/evaluation")
+def evaluation():
+    return render_template("evaluation.html")
+
+
 @app.route("/")
 def index():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM pr").fetchall()
-    total    = len(rows)
-    cloturee = sum(1 for r in rows if r["status"] == "cloturee")
-    en_cours = sum(1 for r in rows if r["status"] == "en-cours")
-    blockee  = sum(1 for r in rows if r["status"] == "blockee")
-    annulee  = sum(1 for r in rows if r["status"] == "annulee")
-
-    total_prog = 0
-    total_late = 0
-    total_warning = 0
-    for r in rows:
-        tasks = load_tasks(conn, r["id"])
-        total_prog += compute_progress(tasks)
-        counts = count_late_steps_for_pr(tasks)
-        total_late    += counts["late"]
-        total_warning += counts["warning"]
-
-    avg_prog = round(total_prog / total, 1) if total else 0
-    conn.close()
-
-    stats = dict(
-        total=total, cloturee=cloturee, en_cours=en_cours,
-        blockee=blockee, annulee=annulee, avg_prog=avg_prog,
-        total_late=total_late, total_warning=total_warning
-    )
-    return render_template("index.html", stats=stats)
-
-
-# ── PR CRUD ──────────────��────────────────────────────────────────────────────
-
-@app.route("/api/pr", methods=["GET"])
-def get_all_pr():
-    conn = get_db()
-    q = request.args.get("q", "").lower()
-    rows = conn.execute("SELECT * FROM pr ORDER BY created_date DESC").fetchall()
-    result = []
-    for r in rows:
-        base_cat = r["base_category"] or r["category"]
-        if q and q not in str(r["number"]).lower() \
-             and q not in r["title"].lower() \
-             and q not in r["category"].lower() \
-             and q not in base_cat.lower():
-            continue
-        pr = row_to_pr(r)
-        tasks = load_tasks(conn, r["id"])
-        pr["progress"]        = compute_progress(tasks)
-        pr["completed_tasks"] = sum(1 for t in tasks.values() if t.get("done"))
-        pr["total_tasks"]     = len(tasks)
-        counts = count_late_steps_for_pr(tasks)
-        pr["late_steps"]    = counts["late"]
-        pr["warning_steps"] = counts["warning"]
-        
-        # Add processing time info — use base_category for limits lookup
-        proc_time = calculate_processing_time(tasks, r["created_date"])
-        pr["processing_days"]  = proc_time["days"]
-        pr["processing_weeks"] = proc_time["weeks"]
-        max_weeks = PROCESSING_LIMITS.get(base_cat, {}).get("max_weeks", 0)
-        pr["max_weeks"] = max_weeks
-        pr["exceeded"] = proc_time["weeks"] > max_weeks if max_weeks > 0 else False
-        
-        result.append(pr)
-    conn.close()
-    return jsonify(result)
-
-
-@app.route("/api/pr", methods=["POST"])
-def create_pr():
-    body     = request.json
-    number   = body.get("number","").strip()
-    title    = body.get("title","").strip()
-    category = body.get("category","")
-    pr_date  = body.get("prDate","")
-
-    if not all([number, title, category, pr_date]):
-        return jsonify({"error": "Tous les champs sont requis"}), 400
-    if category not in STEPS_DATA:
-        return jsonify({"error": "Catégorie invalide"}), 400
-
-    pr_id = f"PR-{number}-{datetime.now().strftime('%f')}"
-    conn  = get_db()
-    conn.execute(
-        "INSERT INTO pr (id, number, title, category, base_category, status, created_date) VALUES (?,?,?,?,?,?,?)",
-        (pr_id, number, title, category, category, "en-cours", pr_date)
-    )
-    for s in STEPS_DATA[category]:
-        conn.execute(
-            "INSERT INTO task (pr_id, task_id, title, description, done, date_prev, date_reelle, note) VALUES (?,?,?,?,0,'','','')",
-            (pr_id, str(s["id"]), s["title"], s["desc"])
-        )
-    # Seed default document checklist for ED / CR / COU / REG
-    seed_pr_docs(conn, pr_id, category)
-    conn.commit()
-    conn.close()
-    return jsonify({"id": pr_id, "message": "PR créée avec succès"}), 201
-
-
-@app.route("/api/pr/<pr_id>", methods=["GET"])
-def get_pr(pr_id):
-    conn = get_db()
-    row = conn.execute("SELECT * FROM pr WHERE id = ?", (pr_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "PR introuvable"}), 404
-    pr = row_to_pr(row)
-    pr["baseCategory"] = row["base_category"] or row["category"]
-    tasks = load_tasks(conn, pr_id)
-    pr["tasks"]    = tasks
-    pr["progress"] = compute_progress(tasks)
-    conn.close()
-    return jsonify(pr)
-
-
-@app.route("/api/pr/<pr_id>", methods=["PUT"])
-def update_pr(pr_id):
-    conn = get_db()
-    row = conn.execute("SELECT id FROM pr WHERE id = ?", (pr_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "PR introuvable"}), 404
-    body = request.json
-    fields = []
-    values = []
-    mapping = {"number":"number","title":"title","category":"category",
-               "status":"status","createdDate":"created_date"}
-    for k, col in mapping.items():
-        if k in body:
-            fields.append(f"{col} = ?")
-            values.append(body[k])
-    if fields:
-        values.append(pr_id)
-        conn.execute(f"UPDATE pr SET {', '.join(fields)} WHERE id = ?", values)
-        conn.commit()
-    conn.close()
-    return jsonify({"message": "PR mise à jour"})
-
-
-@app.route("/api/pr/<pr_id>", methods=["DELETE"])
-def delete_pr(pr_id):
-    conn = get_db()
-    row = conn.execute("SELECT id FROM pr WHERE id = ?", (pr_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "PR introuvable"}), 404
-    conn.execute("DELETE FROM task WHERE pr_id = ?", (pr_id,))
-    conn.execute("DELETE FROM pr WHERE id = ?",      (pr_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"message": "PR supprimée"})
-
-
-# ── TASK (checklist) ──────────────────────────────────────────────────────────
-
-@app.route("/api/pr/<pr_id>/task/<task_id>", methods=["PATCH"])
-def update_task(pr_id, task_id):
-    conn = get_db()
-    row = conn.execute(
-        "SELECT * FROM task WHERE pr_id = ? AND task_id = ?", (pr_id, task_id)
-    ).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "Tâche introuvable"}), 404
-
-    body   = request.json
-    fields = []
-    values = []
-    allowed = {"done": "done", "date_prev": "date_prev",
-               "date_reelle": "date_reelle", "note": "note"}
-    for k, col in allowed.items():
-        if k in body:
-            val = body[k]
-            if col == "done":
-                val = 1 if val else 0
-            fields.append(f"{col} = ?")
-            values.append(val)
-    if fields:
-        values += [pr_id, task_id]
-        conn.execute(f"UPDATE task SET {', '.join(fields)} WHERE pr_id = ? AND task_id = ?", values)
-        conn.commit()
-
-    tasks    = load_tasks(conn, pr_id)
-    progress = compute_progress(tasks)
-    counts   = count_late_steps_for_pr(tasks)
-    # Return the updated task delay status too
-    updated_task = tasks.get(task_id, {})
-    conn.close()
-    return jsonify({
-        "progress":      progress,
-        "late_steps":    counts["late"],
-        "warning_steps": counts["warning"],
-        "delay":         updated_task.get("delay", ""),
-    })
-
-
-# ── LOST DAYS ─────────────────────────────────────────────────────────────────
-
-@app.route("/api/pr/<pr_id>/lost-days", methods=["POST"])
-def set_lost_days(pr_id):
-    """Update lost days for a PR and return updated delay calculations."""
-    conn = get_db()
-    row = conn.execute("SELECT id FROM pr WHERE id = ?", (pr_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "PR introuvable"}), 404
-    
-    lost_days = request.json.get("lost_days", 0)
     try:
         lost_days = int(lost_days)
         if lost_days < 0:
@@ -1331,7 +1143,7 @@ def get_processing_limits():
     return jsonify(PROCESSING_LIMITS)
 
 
-# ── DOCUMENTS MANAGEMENT ──────────��───────────────────────────────────────────
+# ── DOCUMENTS MANAGEMENT ──────────���───────────────────────────────────────────
 
 @app.route("/api/documents", methods=["GET"])
 def get_documents():
@@ -1625,6 +1437,349 @@ def import_excel():
         return jsonify({"error": str(e)}), 500
 
 
+# ─── FINANCIAL EVALUATION ─────────────────────────────────────────────────────────
+
+@app.route("/api/evaluation", methods=["GET"])
+def get_evaluation():
+    """Get or create a financial evaluation"""
+    eval_id = request.args.get("id")
+    conn = get_db()
+    if eval_id:
+        row = conn.execute(
+            "SELECT * FROM financial_evaluation WHERE id = ?", (eval_id,)
+        ).fetchone()
+        if row:
+            return jsonify({
+                "id": row[0],
+                "pr_id": row[1],
+                "title": row[2],
+                "created_date": row[3],
+                "oi_data": json.loads(row[4]) if row[4] else None,
+                "oa1_data": json.loads(row[5]) if row[5] else None,
+                "oa2_data": json.loads(row[6]) if row[6] else None,
+            })
+        return jsonify({"error": "Evaluation not found"}), 404
+    
+    # Create new evaluation
+    eval_id = str(uuid.uuid4())
+    pr_id = request.args.get("pr_id", "")
+    title = request.args.get("title", "Nouvelle Évaluation")
+    created_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    conn.execute(
+        "INSERT INTO financial_evaluation (id, pr_id, title, created_date) VALUES (?, ?, ?, ?)",
+        (eval_id, pr_id, title, created_date)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "id": eval_id,
+        "pr_id": pr_id,
+        "title": title,
+        "created_date": created_date,
+        "oi_data": None,
+        "oa1_data": None,
+        "oa2_data": None,
+    })
+
+
+@app.route("/api/evaluation/oi", methods=["POST"])
+def evaluate_oi():
+    """Evaluate OI phase: keep 3 cheapest + 4th if gap < 15%"""
+    data = request.json
+    eval_id = data.get("eval_id")
+    companies = data.get("companies", [])
+    
+    # Sort by amount
+    sorted_companies = sorted(companies, key=lambda c: float(c.get("amount", 0)) or 0)
+    
+    cheapest = sorted_companies[0]
+    cheapest_amount = float(cheapest.get("amount", 0)) or 0
+    
+    selected = [cheapest]
+    eliminated = []
+    
+    # Add next 2 cheapest
+    for company in sorted_companies[1:4]:
+        selected.append(company)
+    
+    # Check 4th company gap if exists
+    if len(sorted_companies) > 3:
+        fourth = sorted_companies[3]
+        fourth_amount = float(fourth.get("amount", 0)) or 0
+        gap_percent = ((fourth_amount - cheapest_amount) / cheapest_amount * 100) if cheapest_amount > 0 else 0
+        
+        if gap_percent < 15:
+            selected.append(fourth)
+        else:
+            eliminated.append({
+                "name": fourth.get("name"),
+                "amount": fourth_amount,
+                "reason": f"Gap > 15% ({gap_percent:.1f}%)"
+            })
+    
+    # Eliminate rest
+    for company in sorted_companies[5:] if len(selected) == 5 else sorted_companies[4:]:
+        eliminated.append({
+            "name": company.get("name"),
+            "amount": float(company.get("amount", 0)) or 0,
+            "reason": "Not in top 3/4"
+        })
+    
+    result = {
+        "phase": "OI",
+        "selected": selected,
+        "eliminated": eliminated,
+        "count": len(selected)
+    }
+    
+    conn = get_db()
+    conn.execute(
+        "UPDATE financial_evaluation SET oi_data = ? WHERE id = ?",
+        (json.dumps(result), eval_id)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify(result)
+
+
+@app.route("/api/evaluation/oa1", methods=["POST"])
+def evaluate_oa1():
+    """Evaluate OA1 phase: keep cheapest + companies with gap < 5%"""
+    data = request.json
+    eval_id = data.get("eval_id")
+    companies = data.get("companies", [])
+    
+    if not companies:
+        return jsonify({"error": "No companies provided"}), 400
+    
+    sorted_companies = sorted(companies, key=lambda c: float(c.get("amount", 0)) or 0)
+    cheapest = sorted_companies[0]
+    cheapest_amount = float(cheapest.get("amount", 0)) or 0
+    
+    selected = [cheapest]
+    eliminated = []
+    
+    for company in sorted_companies[1:]:
+        company_amount = float(company.get("amount", 0)) or 0
+        gap_percent = ((company_amount - cheapest_amount) / cheapest_amount * 100) if cheapest_amount > 0 else 0
+        
+        if gap_percent < 5:
+            selected.append(company)
+        else:
+            eliminated.append({
+                "name": company.get("name"),
+                "amount": company_amount,
+                "reason": f"Gap >= 5% ({gap_percent:.1f}%)"
+            })
+    
+    result = {
+        "phase": "OA1",
+        "selected": selected,
+        "eliminated": eliminated,
+        "count": len(selected)
+    }
+    
+    conn = get_db()
+    conn.execute(
+        "UPDATE financial_evaluation SET oa1_data = ? WHERE id = ?",
+        (json.dumps(result), eval_id)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify(result)
+
+
+@app.route("/api/evaluation/oa2", methods=["POST"])
+def evaluate_oa2():
+    """Evaluate OA2 phase: keep only cheapest provider (final winner)"""
+    data = request.json
+    eval_id = data.get("eval_id")
+    companies = data.get("companies", [])
+    
+    if not companies:
+        return jsonify({"error": "No companies provided"}), 400
+    
+    sorted_companies = sorted(companies, key=lambda c: float(c.get("amount", 0)) or 0)
+    winner = sorted_companies[0]
+    eliminated = []
+    
+    for company in sorted_companies[1:]:
+        eliminated.append({
+            "name": company.get("name"),
+            "amount": float(company.get("amount", 0)) or 0,
+            "reason": "Not the cheapest provider"
+        })
+    
+    result = {
+        "phase": "OA2",
+        "selected": [winner],
+        "eliminated": eliminated,
+        "count": 1
+    }
+    
+    conn = get_db()
+    conn.execute(
+        "UPDATE financial_evaluation SET oa2_data = ? WHERE id = ?",
+        (json.dumps(result), eval_id)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify(result)
+
+
+@app.route("/api/evaluation/<eval_id>/export", methods=["GET"])
+def export_evaluation(eval_id):
+    """Export evaluation to Excel"""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM financial_evaluation WHERE id = ?", (eval_id,)
+    ).fetchone()
+    
+    if not row:
+        return jsonify({"error": "Evaluation not found"}), 404
+    
+    title = row[2]
+    oi_data = json.loads(row[4]) if row[4] else None
+    oa1_data = json.loads(row[5]) if row[5] else None
+    oa2_data = json.loads(row[6]) if row[6] else None
+    
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    
+    # Define styles
+    title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    normal_font = Font(name="Calibri", size=10)
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    selected_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    eliminated_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    
+    # OI Sheet
+    if oi_data:
+        ws = wb.create_sheet("OI")
+        ws['A1'] = "Ouverture Initiale (OI)"
+        ws['A1'].font = title_font
+        ws['A1'].fill = header_fill
+        ws.merge_cells('A1:C1')
+        ws['A1'].alignment = center_align
+        
+        ws['A2'] = "Sélectionnés"
+        ws['A2'].font = Font(bold=True, size=11)
+        
+        row_idx = 3
+        for company in oi_data.get("selected", []):
+            ws[f'A{row_idx}'] = company.get("name")
+            ws[f'B{row_idx}'] = company.get("amount")
+            ws[f'C{row_idx}'] = "OUI"
+            ws[f'A{row_idx}'].fill = selected_fill
+            ws[f'B{row_idx}'].fill = selected_fill
+            ws[f'C{row_idx}'].fill = selected_fill
+            row_idx += 1
+        
+        row_idx += 1
+        ws[f'A{row_idx}'] = "Éliminés"
+        ws[f'A{row_idx}'].font = Font(bold=True, size=11)
+        
+        row_idx += 1
+        for company in oi_data.get("eliminated", []):
+            ws[f'A{row_idx}'] = company.get("name")
+            ws[f'B{row_idx}'] = company.get("amount")
+            ws[f'C{row_idx}'] = company.get("reason")
+            ws[f'A{row_idx}'].fill = eliminated_fill
+            ws[f'B{row_idx}'].fill = eliminated_fill
+            ws[f'C{row_idx}'].fill = eliminated_fill
+            row_idx += 1
+        
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 40
+    
+    # OA1 Sheet
+    if oa1_data:
+        ws = wb.create_sheet("OA1")
+        ws['A1'] = "Offres Améliorées 1 (OA1)"
+        ws['A1'].font = title_font
+        ws['A1'].fill = header_fill
+        ws.merge_cells('A1:C1')
+        ws['A1'].alignment = center_align
+        
+        ws['A2'] = "Sélectionnés"
+        ws['A2'].font = Font(bold=True, size=11)
+        
+        row_idx = 3
+        for company in oa1_data.get("selected", []):
+            ws[f'A{row_idx}'] = company.get("name")
+            ws[f'B{row_idx}'] = company.get("amount")
+            ws[f'C{row_idx}'] = "OUI"
+            ws[f'A{row_idx}'].fill = selected_fill
+            ws[f'B{row_idx}'].fill = selected_fill
+            ws[f'C{row_idx}'].fill = selected_fill
+            row_idx += 1
+        
+        row_idx += 1
+        ws[f'A{row_idx}'] = "Éliminés"
+        ws[f'A{row_idx}'].font = Font(bold=True, size=11)
+        
+        row_idx += 1
+        for company in oa1_data.get("eliminated", []):
+            ws[f'A{row_idx}'] = company.get("name")
+            ws[f'B{row_idx}'] = company.get("amount")
+            ws[f'C{row_idx}'] = company.get("reason")
+            ws[f'A{row_idx}'].fill = eliminated_fill
+            ws[f'B{row_idx}'].fill = eliminated_fill
+            ws[f'C{row_idx}'].fill = eliminated_fill
+            row_idx += 1
+        
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 40
+    
+    # OA2 Sheet
+    if oa2_data:
+        ws = wb.create_sheet("OA2")
+        ws['A1'] = "Offres Améliorées 2 (OA2) - GAGNANT"
+        ws['A1'].font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        ws['A1'].fill = PatternFill(start_color="16A34A", end_color="16A34A", fill_type="solid")
+        ws.merge_cells('A1:C1')
+        ws['A1'].alignment = center_align
+        
+        ws['A2'] = "Gagnant"
+        ws['A2'].font = Font(bold=True, size=11)
+        
+        if oa2_data.get("selected"):
+            winner = oa2_data["selected"][0]
+            ws['A3'] = winner.get("name")
+            ws['B3'] = winner.get("amount")
+            ws['C3'] = "GAGNANT"
+            ws['A3'].fill = selected_fill
+            ws['B3'].fill = selected_fill
+            ws['C3'].fill = selected_fill
+            ws['C3'].font = Font(bold=True, color="16A34A")
+        
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 40
+    
+    conn.close()
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"Evaluation_{title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
 # ─── GENERATE EMPTY DB FOR DISTRIBUTION ────────────────────────────────────────
 def create_empty_db():
     """
@@ -1693,6 +1848,16 @@ def create_empty_db():
             done       INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (pr_id) REFERENCES pr(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS financial_evaluation (
+            id          TEXT PRIMARY KEY,
+            pr_id       TEXT,
+            title       TEXT NOT NULL,
+            created_date TEXT NOT NULL,
+            oi_data     TEXT,
+            oa1_data    TEXT,
+            oa2_data    TEXT
         );
     """)
     conn.commit()

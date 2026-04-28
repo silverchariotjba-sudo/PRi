@@ -1,0 +1,922 @@
+{% extends "base.html" %}
+{% block title %}Évaluation Financière{% endblock %}
+
+{% block content %}
+<div id="evaluationView" class="evaluation-view">
+  
+  <!-- Page header -->
+  <div class="page-header-custom">
+    <div>
+      <h2 class="page-title">
+        <span class="glyphicon glyphicon-euro"></span>
+        Évaluation Financière
+      </h2>
+      <p class="page-subtitle">Outil d'évaluation OI, OA1, OA2</p>
+    </div>
+  </div>
+
+  <!-- ── EVALUATION CONTAINER ────────────────────────────────────────── -->
+  <div class="evaluation-container">
+    
+    <!-- Title and Setup -->
+    <div class="evaluation-header">
+      <div class="eval-title-group">
+        <label for="evalTitle">Titre de l'évaluation:</label>
+        <input type="text" id="evalTitle" class="eval-title-input" placeholder="ex: Évaluation marché fournitures..." value="Nouvelle Évaluation" />
+      </div>
+      <div class="eval-actions">
+        <button id="btnExportEval" class="btn-eval-action btn-export" title="Exporter en Excel">
+          <span class="glyphicon glyphicon-download-alt"></span> Exporter
+        </button>
+        <button id="btnResetEval" class="btn-eval-action btn-reset" title="Réinitialiser">
+          <span class="glyphicon glyphicon-trash"></span> Réinitialiser
+        </button>
+      </div>
+    </div>
+
+    <!-- ── OI PHASE ────────────────────────────────────────────────────── -->
+    <div class="eval-phase">
+      <div class="phase-header phase-oi">
+        <h3>
+          <span class="phase-badge">1</span>
+          Ouverture Initiale (OI)
+        </h3>
+        <span class="phase-desc">Sélectionner les 3 meilleurs + 4ème si écart < 15%</span>
+      </div>
+
+      <div class="phase-content">
+        <!-- Input table for OI -->
+        <table class="eval-input-table">
+          <thead>
+            <tr>
+              <th>N° Société</th>
+              <th>Nom Société</th>
+              <th>Montant Proposé</th>
+              <th class="action-col">Action</th>
+            </tr>
+          </thead>
+          <tbody id="oiInputBody">
+            <tr class="input-row">
+              <td><input type="number" class="company-id" placeholder="1" /></td>
+              <td><input type="text" class="company-name" placeholder="Nom" /></td>
+              <td><input type="number" class="company-amount" placeholder="0.00" step="0.01" /></td>
+              <td><button type="button" class="btn-remove" onclick="removeRow(this)">
+                <span class="glyphicon glyphicon-remove"></span>
+              </button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <button id="btnAddOiRow" class="btn-add-row">
+          <span class="glyphicon glyphicon-plus"></span> Ajouter une société
+        </button>
+
+        <button id="btnEvaluateOi" class="btn-evaluate btn-evaluate-oi">
+          <span class="glyphicon glyphicon-ok"></span> Évaluer OI
+        </button>
+
+        <!-- Results for OI -->
+        <div id="oiResults" class="eval-results" style="display:none">
+          <div class="results-section">
+            <h4 class="results-title selected">
+              <span class="glyphicon glyphicon-ok-circle"></span>
+              Sélectionnés (
+              <span id="oiSelectedCount">0</span>)
+            </h4>
+            <table class="results-table selected-table">
+              <thead>
+                <tr>
+                  <th>Société</th>
+                  <th>Montant</th>
+                  <th>Écart %</th>
+                </tr>
+              </thead>
+              <tbody id="oiSelectedBody"></tbody>
+            </table>
+          </div>
+
+          <div class="results-section">
+            <h4 class="results-title eliminated">
+              <span class="glyphicon glyphicon-remove-circle"></span>
+              Éliminés (
+              <span id="oiEliminatedCount">0</span>)
+            </h4>
+            <table class="results-table eliminated-table">
+              <thead>
+                <tr>
+                  <th>Société</th>
+                  <th>Montant</th>
+                  <th>Motif</th>
+                </tr>
+              </thead>
+              <tbody id="oiEliminatedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── OA1 PHASE ───────────────────────────────────────────────────── -->
+    <div class="eval-phase" id="oa1Phase" style="opacity:0.5;pointer-events:none">
+      <div class="phase-header phase-oa1">
+        <h3>
+          <span class="phase-badge">2</span>
+          Offres Améliorées 1 (OA1)
+        </h3>
+        <span class="phase-desc">Sélectionner le moins cher + écart < 5%</span>
+      </div>
+
+      <div class="phase-content">
+        <!-- Input table for OA1 -->
+        <table class="eval-input-table">
+          <thead>
+            <tr>
+              <th>N° Société</th>
+              <th>Nom Société</th>
+              <th>Montant Proposé</th>
+              <th class="action-col">Action</th>
+            </tr>
+          </thead>
+          <tbody id="oa1InputBody">
+            <tr class="input-row">
+              <td><input type="number" class="company-id" placeholder="1" /></td>
+              <td><input type="text" class="company-name" placeholder="Nom" /></td>
+              <td><input type="number" class="company-amount" placeholder="0.00" step="0.01" /></td>
+              <td><button type="button" class="btn-remove" onclick="removeRow(this)">
+                <span class="glyphicon glyphicon-remove"></span>
+              </button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <button id="btnAddOa1Row" class="btn-add-row">
+          <span class="glyphicon glyphicon-plus"></span> Ajouter une société
+        </button>
+
+        <button id="btnEvaluateOa1" class="btn-evaluate btn-evaluate-oa1" disabled>
+          <span class="glyphicon glyphicon-ok"></span> Évaluer OA1
+        </button>
+
+        <!-- Results for OA1 -->
+        <div id="oa1Results" class="eval-results" style="display:none">
+          <div class="results-section">
+            <h4 class="results-title selected">
+              <span class="glyphicon glyphicon-ok-circle"></span>
+              Sélectionnés (
+              <span id="oa1SelectedCount">0</span>)
+            </h4>
+            <table class="results-table selected-table">
+              <thead>
+                <tr>
+                  <th>Société</th>
+                  <th>Montant</th>
+                  <th>Écart %</th>
+                </tr>
+              </thead>
+              <tbody id="oa1SelectedBody"></tbody>
+            </table>
+          </div>
+
+          <div class="results-section">
+            <h4 class="results-title eliminated">
+              <span class="glyphicon glyphicon-remove-circle"></span>
+              Éliminés (
+              <span id="oa1EliminatedCount">0</span>)
+            </h4>
+            <table class="results-table eliminated-table">
+              <thead>
+                <tr>
+                  <th>Société</th>
+                  <th>Montant</th>
+                  <th>Motif</th>
+                </tr>
+              </thead>
+              <tbody id="oa1EliminatedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── OA2 PHASE ───────────────────────────────────────────────────── -->
+    <div class="eval-phase" id="oa2Phase" style="opacity:0.5;pointer-events:none">
+      <div class="phase-header phase-oa2">
+        <h3>
+          <span class="phase-badge">3</span>
+          Offres Améliorées 2 (OA2)
+        </h3>
+        <span class="phase-desc">Sélectionner le fournisseur gagnant</span>
+      </div>
+
+      <div class="phase-content">
+        <!-- Input table for OA2 -->
+        <table class="eval-input-table">
+          <thead>
+            <tr>
+              <th>N° Société</th>
+              <th>Nom Société</th>
+              <th>Montant Proposé</th>
+              <th class="action-col">Action</th>
+            </tr>
+          </thead>
+          <tbody id="oa2InputBody">
+            <tr class="input-row">
+              <td><input type="number" class="company-id" placeholder="1" /></td>
+              <td><input type="text" class="company-name" placeholder="Nom" /></td>
+              <td><input type="number" class="company-amount" placeholder="0.00" step="0.01" /></td>
+              <td><button type="button" class="btn-remove" onclick="removeRow(this)">
+                <span class="glyphicon glyphicon-remove"></span>
+              </button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <button id="btnAddOa2Row" class="btn-add-row">
+          <span class="glyphicon glyphicon-plus"></span> Ajouter une société
+        </button>
+
+        <button id="btnEvaluateOa2" class="btn-evaluate btn-evaluate-oa2" disabled>
+          <span class="glyphicon glyphicon-ok"></span> Évaluer OA2
+        </button>
+
+        <!-- Results for OA2 - Winner -->
+        <div id="oa2Results" class="eval-results" style="display:none">
+          <div class="results-section winner-section">
+            <h4 class="results-title winner">
+              <span class="glyphicon glyphicon-star"></span>
+              GAGNANT
+            </h4>
+            <table class="results-table winner-table">
+              <thead>
+                <tr>
+                  <th>Société</th>
+                  <th>Montant</th>
+                  <th>Statut</th>
+                </tr>
+              </thead>
+              <tbody id="oa2WinnerBody"></tbody>
+            </table>
+          </div>
+
+          <div class="results-section">
+            <h4 class="results-title eliminated">
+              <span class="glyphicon glyphicon-remove-circle"></span>
+              Éliminés (
+              <span id="oa2EliminatedCount">0</span>)
+            </h4>
+            <table class="results-table eliminated-table">
+              <thead>
+                <tr>
+                  <th>Société</th>
+                  <th>Montant</th>
+                  <th>Motif</th>
+                </tr>
+              </thead>
+              <tbody id="oa2EliminatedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  // State management
+  let evaluationState = {
+    id: null,
+    title: 'Nouvelle Évaluation',
+    oi_data: null,
+    oa1_data: null,
+    oa2_data: null,
+    oi_companies: [{}],
+    oa1_companies: [{}],
+    oa2_companies: [{}]
+  };
+
+  // Initialize on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    initializeEvaluation();
+    setupEventListeners();
+  });
+
+  function initializeEvaluation() {
+    const params = new URLSearchParams(window.location.search);
+    const evalId = params.get('id');
+    
+    if (evalId) {
+      fetch(`/api/evaluation?id=${evalId}`)
+        .then(r => r.json())
+        .then(data => {
+          evaluationState = {
+            id: data.id,
+            title: data.title,
+            oi_data: data.oi_data,
+            oa1_data: data.oa1_data,
+            oa2_data: data.oa2_data,
+            oi_companies: data.oi_data ? data.oi_data.selected.concat(data.oi_data.eliminated) : [{}],
+            oa1_companies: data.oa1_data ? data.oa1_data.selected.concat(data.oa1_data.eliminated) : [{}],
+            oa2_companies: data.oa2_data ? data.oa2_data.selected.concat(data.oa2_data.eliminated) : [{}]
+          };
+          document.getElementById('evalTitle').value = data.title;
+          renderResults();
+          updatePhaseStates();
+        });
+    } else {
+      fetch(`/api/evaluation`)
+        .then(r => r.json())
+        .then(data => {
+          evaluationState.id = data.id;
+          evaluationState.title = data.title;
+          document.getElementById('evalTitle').value = data.title;
+        });
+    }
+  }
+
+  function setupEventListeners() {
+    // Add row buttons
+    document.getElementById('btnAddOiRow').addEventListener('click', () => addTableRow('oiInputBody'));
+    document.getElementById('btnAddOa1Row').addEventListener('click', () => addTableRow('oa1InputBody'));
+    document.getElementById('btnAddOa2Row').addEventListener('click', () => addTableRow('oa2InputBody'));
+
+    // Evaluate buttons
+    document.getElementById('btnEvaluateOi').addEventListener('click', evaluatePhase.bind(null, 'oi'));
+    document.getElementById('btnEvaluateOa1').addEventListener('click', evaluatePhase.bind(null, 'oa1'));
+    document.getElementById('btnEvaluateOa2').addEventListener('click', evaluatePhase.bind(null, 'oa2'));
+
+    // Export and reset
+    document.getElementById('btnExportEval').addEventListener('click', exportEvaluation);
+    document.getElementById('btnResetEval').addEventListener('click', resetEvaluation);
+
+    // Title change
+    document.getElementById('evalTitle').addEventListener('change', function() {
+      evaluationState.title = this.value;
+    });
+  }
+
+  function addTableRow(tableBodyId) {
+    const tbody = document.getElementById(tableBodyId);
+    const newRow = document.createElement('tr');
+    newRow.className = 'input-row';
+    newRow.innerHTML = `
+      <td><input type="number" class="company-id" placeholder="1" /></td>
+      <td><input type="text" class="company-name" placeholder="Nom" /></td>
+      <td><input type="number" class="company-amount" placeholder="0.00" step="0.01" /></td>
+      <td><button type="button" class="btn-remove" onclick="removeRow(this)">
+        <span class="glyphicon glyphicon-remove"></span>
+      </button></td>
+    `;
+    tbody.appendChild(newRow);
+  }
+
+  function removeRow(btn) {
+    btn.closest('tr').remove();
+  }
+
+  function getTableData(tableBodyId) {
+    const tbody = document.getElementById(tableBodyId);
+    const companies = [];
+    tbody.querySelectorAll('.input-row').forEach(row => {
+      const id = row.querySelector('.company-id').value;
+      const name = row.querySelector('.company-name').value;
+      const amount = row.querySelector('.company-amount').value;
+      if (name && amount) {
+        companies.push({
+          id: id || companies.length + 1,
+          name: name,
+          amount: parseFloat(amount)
+        });
+      }
+    });
+    return companies;
+  }
+
+  function evaluatePhase(phase) {
+    const phaseMap = {
+      'oi': { bodyId: 'oiInputBody', endpoint: '/api/evaluation/oi', resultsId: 'oiResults' },
+      'oa1': { bodyId: 'oa1InputBody', endpoint: '/api/evaluation/oa1', resultsId: 'oa1Results' },
+      'oa2': { bodyId: 'oa2InputBody', endpoint: '/api/evaluation/oa2', resultsId: 'oa2Results' }
+    };
+
+    const config = phaseMap[phase];
+    const companies = getTableData(config.bodyId);
+
+    if (companies.length === 0) {
+      Swal.fire('Erreur', 'Veuillez ajouter au moins une société', 'error');
+      return;
+    }
+
+    fetch(config.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eval_id: evaluationState.id,
+        companies: companies
+      })
+    })
+      .then(r => r.json())
+      .then(data => {
+        evaluationState[phase + '_data'] = data;
+        renderPhaseResults(phase, data);
+        updatePhaseStates();
+        Swal.fire('Succès', `${phase.toUpperCase()} évalué`, 'success');
+      })
+      .catch(err => Swal.fire('Erreur', err.message, 'error'));
+  }
+
+  function renderPhaseResults(phase, data) {
+    const phaseMap = {
+      'oi': {
+        resultsId: 'oiResults',
+        selectedBodyId: 'oiSelectedBody',
+        eliminatedBodyId: 'oiEliminatedBody',
+        selectedCountId: 'oiSelectedCount',
+        eliminatedCountId: 'oiEliminatedCount'
+      },
+      'oa1': {
+        resultsId: 'oa1Results',
+        selectedBodyId: 'oa1SelectedBody',
+        eliminatedBodyId: 'oa1EliminatedBody',
+        selectedCountId: 'oa1SelectedCount',
+        eliminatedCountId: 'oa1EliminatedCount'
+      },
+      'oa2': {
+        resultsId: 'oa2Results',
+        selectedBodyId: 'oa2WinnerBody',
+        eliminatedBodyId: 'oa2EliminatedBody',
+        selectedCountId: null,
+        eliminatedCountId: 'oa2EliminatedCount'
+      }
+    };
+
+    const config = phaseMap[phase];
+    const resultsDiv = document.getElementById(config.resultsId);
+
+    // Clear previous results
+    if (config.selectedBodyId) {
+      document.getElementById(config.selectedBodyId).innerHTML = '';
+      document.getElementById(config.selectedCountId).textContent = data.selected.length;
+      data.selected.forEach(company => {
+        const row = document.createElement('tr');
+        const lowestAmount = Math.min(...data.selected.map(c => parseFloat(c.amount)));
+        const gap = company.amount === lowestAmount ? 0 : (((company.amount - lowestAmount) / lowestAmount) * 100).toFixed(1);
+        row.innerHTML = `
+          <td>${company.name}</td>
+          <td>${parseFloat(company.amount).toFixed(2)} €</td>
+          <td>${gap}%</td>
+        `;
+        document.getElementById(config.selectedBodyId).appendChild(row);
+      });
+    }
+
+    document.getElementById(config.eliminatedBodyId).innerHTML = '';
+    document.getElementById(config.eliminatedCountId).textContent = data.eliminated.length;
+    data.eliminated.forEach(company => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${company.name}</td>
+        <td>${parseFloat(company.amount).toFixed(2)} €</td>
+        <td>${company.reason}</td>
+      `;
+      document.getElementById(config.eliminatedBodyId).appendChild(row);
+    });
+
+    resultsDiv.style.display = 'block';
+  }
+
+  function updatePhaseStates() {
+    // Enable OA1 if OI is evaluated
+    document.getElementById('btnEvaluateOa1').disabled = !evaluationState.oi_data;
+    document.getElementById('oa1Phase').style.opacity = evaluationState.oi_data ? '1' : '0.5';
+    document.getElementById('oa1Phase').style.pointerEvents = evaluationState.oi_data ? 'auto' : 'none';
+
+    // If OI is evaluated and OA1 is empty, pre-populate with OI selected
+    if (evaluationState.oi_data && document.getElementById('oa1InputBody').querySelectorAll('tr').length === 1) {
+      const oa1Body = document.getElementById('oa1InputBody');
+      oa1Body.innerHTML = '';
+      evaluationState.oi_data.selected.forEach((company, idx) => {
+        const row = document.createElement('tr');
+        row.className = 'input-row';
+        row.innerHTML = `
+          <td><input type="number" class="company-id" placeholder="1" value="${company.id || (idx+1)}" /></td>
+          <td><input type="text" class="company-name" placeholder="Nom" value="${company.name}" /></td>
+          <td><input type="number" class="company-amount" placeholder="0.00" step="0.01" value="${company.amount}" /></td>
+          <td><button type="button" class="btn-remove" onclick="removeRow(this)">
+            <span class="glyphicon glyphicon-remove"></span>
+          </button></td>
+        `;
+        oa1Body.appendChild(row);
+      });
+    }
+
+    // Enable OA2 if OA1 is evaluated
+    document.getElementById('btnEvaluateOa2').disabled = !evaluationState.oa1_data;
+    document.getElementById('oa2Phase').style.opacity = evaluationState.oa1_data ? '1' : '0.5';
+    document.getElementById('oa2Phase').style.pointerEvents = evaluationState.oa1_data ? 'auto' : 'none';
+
+    // If OA1 is evaluated and OA2 is empty, pre-populate with OA1 selected
+    if (evaluationState.oa1_data && document.getElementById('oa2InputBody').querySelectorAll('tr').length === 1) {
+      const oa2Body = document.getElementById('oa2InputBody');
+      oa2Body.innerHTML = '';
+      evaluationState.oa1_data.selected.forEach((company, idx) => {
+        const row = document.createElement('tr');
+        row.className = 'input-row';
+        row.innerHTML = `
+          <td><input type="number" class="company-id" placeholder="1" value="${company.id || (idx+1)}" /></td>
+          <td><input type="text" class="company-name" placeholder="Nom" value="${company.name}" /></td>
+          <td><input type="number" class="company-amount" placeholder="0.00" step="0.01" value="${company.amount}" /></td>
+          <td><button type="button" class="btn-remove" onclick="removeRow(this)">
+            <span class="glyphicon glyphicon-remove"></span>
+          </button></td>
+        `;
+        oa2Body.appendChild(row);
+      });
+    }
+  }
+
+  function renderResults() {
+    if (evaluationState.oi_data) {
+      renderPhaseResults('oi', evaluationState.oi_data);
+    }
+    if (evaluationState.oa1_data) {
+      renderPhaseResults('oa1', evaluationState.oa1_data);
+    }
+    if (evaluationState.oa2_data) {
+      renderPhaseResults('oa2', evaluationState.oa2_data);
+    }
+  }
+
+  function exportEvaluation() {
+    if (!evaluationState.id) {
+      Swal.fire('Erreur', 'Aucune évaluation à exporter', 'error');
+      return;
+    }
+    window.location.href = `/api/evaluation/${evaluationState.id}/export`;
+  }
+
+  function resetEvaluation() {
+    Swal.fire({
+      title: 'Confirmer',
+      text: 'Réinitialiser tous les résultats ?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Oui',
+      cancelButtonText: 'Non'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        evaluationState.oi_data = null;
+        evaluationState.oa1_data = null;
+        evaluationState.oa2_data = null;
+        document.getElementById('oiResults').style.display = 'none';
+        document.getElementById('oa1Results').style.display = 'none';
+        document.getElementById('oa2Results').style.display = 'none';
+        updatePhaseStates();
+        Swal.fire('Réinitialisé', 'L\'évaluation a été réinitialisée', 'success');
+      }
+    });
+  }
+</script>
+
+<style>
+  .evaluation-view {
+    padding: 20px;
+  }
+
+  .evaluation-container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .evaluation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding: 15px;
+    background: #f5f5f5;
+    border-radius: 4px;
+  }
+
+  .eval-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .eval-title-group label {
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .eval-title-input {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    min-width: 300px;
+  }
+
+  .eval-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-eval-action {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-eval-action:hover {
+    background: #f0f0f0;
+  }
+
+  .btn-export {
+    color: #0066cc;
+  }
+
+  .btn-reset {
+    color: #d9534f;
+  }
+
+  .eval-phase {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    margin-bottom: 30px;
+    overflow: hidden;
+    transition: opacity 0.3s;
+  }
+
+  .phase-header {
+    padding: 15px 20px;
+    border-bottom: 2px solid #e0e0e0;
+  }
+
+  .phase-oi {
+    border-color: #0066cc;
+    background: #f0f8ff;
+  }
+
+  .phase-oa1 {
+    border-color: #ff9800;
+    background: #fff8e1;
+  }
+
+  .phase-oa2 {
+    border-color: #16a34a;
+    background: #f0fdf4;
+  }
+
+  .phase-header h3 {
+    margin: 0 0 5px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+  }
+
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: #0066cc;
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 14px;
+  }
+
+  .phase-oa1 .phase-badge {
+    background: #ff9800;
+  }
+
+  .phase-oa2 .phase-badge {
+    background: #16a34a;
+  }
+
+  .phase-desc {
+    font-size: 12px;
+    color: #666;
+    margin-left: 40px;
+  }
+
+  .phase-content {
+    padding: 20px;
+  }
+
+  .eval-input-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+    font-size: 13px;
+  }
+
+  .eval-input-table thead {
+    background: #f5f5f5;
+  }
+
+  .eval-input-table th {
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid #ddd;
+  }
+
+  .eval-input-table td {
+    padding: 8px;
+    border: 1px solid #ddd;
+  }
+
+  .eval-input-table input {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .action-col {
+    width: 60px;
+    text-align: center;
+  }
+
+  .btn-remove {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    padding: 4px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #d9534f;
+  }
+
+  .btn-remove:hover {
+    background: #fafafa;
+  }
+
+  .btn-add-row {
+    display: block;
+    margin: 10px 0 15px 0;
+    padding: 8px 16px;
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #0066cc;
+  }
+
+  .btn-add-row:hover {
+    background: #efefef;
+  }
+
+  .btn-evaluate {
+    display: block;
+    padding: 10px 20px;
+    margin: 15px 0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-evaluate-oi {
+    background: #0066cc;
+  }
+
+  .btn-evaluate-oa1 {
+    background: #ff9800;
+  }
+
+  .btn-evaluate-oa2 {
+    background: #16a34a;
+  }
+
+  .btn-evaluate:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  .btn-evaluate:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .eval-results {
+    margin-top: 20px;
+  }
+
+  .results-section {
+    margin-bottom: 20px;
+  }
+
+  .results-title {
+    margin: 0 0 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .results-title.selected {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .results-title.eliminated {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  .results-title.winner {
+    background: #fff59d;
+    color: #f57f17;
+  }
+
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .results-table th {
+    padding: 10px;
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .results-table td {
+    padding: 10px;
+    border: 1px solid #ddd;
+  }
+
+  .results-table.selected-table tr {
+    background: #fafafa;
+  }
+
+  .results-table.eliminated-table tr {
+    background: #fff5f5;
+  }
+
+  .results-table.winner-table tr {
+    background: #fffef0;
+  }
+
+  .winner-section .results-title {
+    background: #16a34a;
+    color: white;
+  }
+
+  @media (max-width: 768px) {
+    .evaluation-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 15px;
+    }
+
+    .eval-title-group {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .eval-title-input {
+      width: 100%;
+      min-width: auto;
+    }
+
+    .eval-actions {
+      width: 100%;
+    }
+
+    .eval-input-table,
+    .results-table {
+      font-size: 12px;
+    }
+
+    .phase-desc {
+      margin-left: 0;
+      display: block;
+      margin-top: 5px;
+    }
+  }
+</style>
+{% endblock %}
