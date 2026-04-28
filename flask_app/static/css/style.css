@@ -951,7 +951,7 @@ html, body {
 
 /* ══════════════════��═������������═════════════════════════════════════════════════════
    ALERTS PANEL — detailed list below charts
-   ════════════════════════���═══════════════════════════��������═���═���═���═���═════════════ */
+   ════════════════════════���═════════════════════════���═��������═���═���═���═���═════════════ */
 .alerts-panel {
   background: var(--white);
   border-radius: 14px;
@@ -1652,5 +1652,190 @@ html, body {
 /* Add section */
 .pr-docs-add-section {
   margin-top: 4px;
+}
+
+/* ── EVALUATIONS STYLES ─────────────────────────────────────────────────────── */
+.btn-secondary {
+  background: #2196F3;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+.btn-secondary:hover {
+  background: #1976D2;
+}
+
+.btn-danger {
+  background: #FF6B6B;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+.btn-danger:hover {
+  background: #FF5252;
+}
+
+.btn-remove-company {
+  background: #FFEBEE;
+  color: var(--red);
+  border: 1px solid #FFCDD2;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-remove-company:hover {
+  background: #FFCDD2;
+  border-color: var(--red);
+}
+
+.phase-card {
+  transition: all 0.2s ease;
+}
+.phase-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+}
+
+.company-input-row {
+  transition: opacity 0.2s;
+}
+
+#evaluationsView .page-header-custom {
+  margin-bottom: 20px;
+}
+
+#evaluationsListView,
+#evaluationDetailView {
+  width: 100%;
+}
+
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  padding: 0;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid #E0E0E0;
+  background: #F9FAFB;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2C3E50;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #999;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+.modal-close:hover {
+  background: #E0E0E0;
+  color: #333;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-label {
+  display: block;
+  font-weight: 600;
+  color: #2C3E50;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #D0D0D0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.form-input:focus {
+  outline: none;
+  border-color: #2196F3;
+  box-shadow: 0 0 0 3px rgba(33,150,243,0.1);
+}
+.form-input:readonly {
+  background: #F5F5F5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--red);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+.btn-primary:hover {
+  background: var(--red-dark);
+}
+
+.btn-back {
+  background: transparent;
+  border: none;
+  color: #2196F3;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.btn-back:hover {
+  background: #E3F2FD;
+  color: #1976D2;
 }
 

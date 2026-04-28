@@ -1,4 +1,4 @@
-﻿from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file
 import os
 import sqlite3
 import json
@@ -106,6 +106,34 @@ def init_db():
             FOREIGN KEY (pr_id) REFERENCES pr(id) ON DELETE CASCADE
         )
     """)
+    
+    # Financial Evaluation Tables
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation (
+            id              TEXT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            created_date    TEXT NOT NULL,
+            current_phase   TEXT NOT NULL DEFAULT 'OI',
+            data_json       TEXT NOT NULL,
+            results_json    TEXT NOT NULL DEFAULT '{}'
+        )
+    """)
+    
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation_result (
+            id              TEXT PRIMARY KEY,
+            evaluation_id   TEXT NOT NULL,
+            phase           TEXT NOT NULL,
+            company_name    TEXT NOT NULL,
+            amount          REAL NOT NULL,
+            rank            INTEGER,
+            gap_percent     REAL,
+            status          TEXT NOT NULL,
+            reason          TEXT,
+            FOREIGN KEY (evaluation_id) REFERENCES evaluation(id) ON DELETE CASCADE
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -1331,7 +1359,7 @@ def get_processing_limits():
     return jsonify(PROCESSING_LIMITS)
 
 
-# ── DOCUMENTS MANAGEMENT ──────────��───────────────────────────────────────────
+# ── DOCUMENTS MANAGEMENT ──────────���───────────────────────────────────────────
 
 @app.route("/api/documents", methods=["GET"])
 def get_documents():
@@ -1625,6 +1653,334 @@ def import_excel():
         return jsonify({"error": str(e)}), 500
 
 
+# ─── EVALUATION LOGIC ──────────────────────────────────────────────────────────
+def calculate_gap_percent(amount, min_amount):
+    """Calculate gap percentage: (amount - min) / min * 100"""
+    if min_amount == 0:
+        return 0
+    return ((amount - min_amount) / min_amount) * 100
+
+def evaluate_oi(companies):
+    """
+    OI (Offres Initiales): Keep 3 cheapest + any 4th if gap < 15%
+    Returns: list of kept companies with status
+    """
+    sorted_companies = sorted(companies, key=lambda x: x['amount'])
+    min_amount = sorted_companies[0]['amount']
+    results = []
+    kept = []
+    
+    for i, company in enumerate(sorted_companies):
+        gap_pct = calculate_gap_percent(company['amount'], min_amount)
+        
+        if i < 3:  # Always keep first 3
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Relancé OA1',
+                'reason': f'Top 3 moins chers'
+            })
+            kept.append(company['name'])
+        elif i == 3 and gap_pct < 15:  # 4th if gap < 15%
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Relancé OA1',
+                'reason': f'4ème avec écart < 15%'
+            })
+            kept.append(company['name'])
+        else:
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Écarté',
+                'reason': f'Écart {gap_pct:.1f}% > 15%'
+            })
+    
+    return results, kept
+
+def evaluate_oa1(companies, initial_cheapest_name):
+    """
+    OA1: Keep cheapest + those with gap < 5%
+    IMPORTANT: Always keep the cheapest from OI even if gap > 5%
+    """
+    sorted_companies = sorted(companies, key=lambda x: x['amount'])
+    min_amount = sorted_companies[0]['amount']
+    results = []
+    kept = []
+    
+    for i, company in enumerate(sorted_companies):
+        gap_pct = calculate_gap_percent(company['amount'], min_amount)
+        
+        # Always keep the initial cheapest
+        if company['name'] == initial_cheapest_name:
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Relancé OA2',
+                'reason': f'Moins disant de OI - conservé'
+            })
+            kept.append(company['name'])
+        elif i == 0 or gap_pct < 5:  # Cheapest or gap < 5%
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Relancé OA2',
+                'reason': f'Écart {gap_pct:.1f}% < 5%'
+            })
+            kept.append(company['name'])
+        else:
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Écarté',
+                'reason': f'Écart {gap_pct:.1f}% ≥ 5%'
+            })
+    
+    return results, kept
+
+def evaluate_oa2(companies):
+    """
+    OA2: Keep only the cheapest (or both if tied)
+    """
+    sorted_companies = sorted(companies, key=lambda x: x['amount'])
+    min_amount = sorted_companies[0]['amount']
+    results = []
+    kept = []
+    
+    for i, company in enumerate(sorted_companies):
+        gap_pct = calculate_gap_percent(company['amount'], min_amount)
+        
+        if company['amount'] == min_amount:  # Keep if tied for cheapest
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': 1 if i == 0 else 1,
+                'gap_percent': 0,
+                'status': 'Retenu' if i == 0 else 'Retenu (égalité)',
+                'reason': 'Moins disant'
+            })
+            kept.append(company['name'])
+        else:
+            results.append({
+                'name': company['name'],
+                'amount': company['amount'],
+                'rank': i + 1,
+                'gap_percent': gap_pct,
+                'status': 'Écarté',
+                'reason': f'Montant {company["amount"]:,.0f} > {min_amount:,.0f}'
+            })
+    
+    return results, kept
+
+
+# ─── EVALUATION ROUTES ────────────────────────────────────────────────────────
+@app.route("/api/evaluations", methods=["GET"])
+def get_evaluations():
+    """Get all evaluations"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        evals = c.execute("SELECT id, title, created_date, current_phase FROM evaluation ORDER BY created_date DESC").fetchall()
+        conn.close()
+        return jsonify([dict(e) for e in evals])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/evaluations", methods=["POST"])
+def create_evaluation():
+    """Create a new evaluation"""
+    try:
+        data = request.json
+        eval_id = str(uuid.uuid4())
+        title = data.get('title', 'Évaluation sans titre')
+        created_date = str(datetime.now())
+        data_json = json.dumps(data.get('companies', []))
+        
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO evaluation (id, title, created_date, current_phase, data_json) VALUES (?,?,?,?,?)",
+            (eval_id, title, created_date, 'OI', data_json)
+        )
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"id": eval_id, "message": "Évaluation créée"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/evaluations/<eval_id>", methods=["GET"])
+def get_evaluation(eval_id):
+    """Get evaluation details"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        eval_row = c.execute("SELECT * FROM evaluation WHERE id = ?", (eval_id,)).fetchone()
+        if not eval_row:
+            return jsonify({"error": "Évaluation non trouvée"}), 404
+        
+        results = c.execute("SELECT * FROM evaluation_result WHERE evaluation_id = ?", (eval_id,)).fetchall()
+        conn.close()
+        
+        eval_dict = dict(eval_row)
+        eval_dict['data'] = json.loads(eval_dict['data_json'])
+        eval_dict['results'] = [dict(r) for r in results]
+        
+        return jsonify(eval_dict)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/evaluations/<eval_id>/evaluate", methods=["POST"])
+def evaluate_phase(eval_id):
+    """Evaluate a phase (OI, OA1, OA2)"""
+    try:
+        data = request.json
+        phase = data.get('phase', 'OI')
+        companies = data.get('companies', [])
+        
+        # Determine which evaluation function to use
+        if phase == 'OI':
+            results, kept = evaluate_oi(companies)
+        elif phase == 'OA1':
+            initial_cheapest = data.get('initialCheapest')
+            results, kept = evaluate_oa1(companies, initial_cheapest)
+        elif phase == 'OA2':
+            results, kept = evaluate_oa2(companies)
+        else:
+            return jsonify({"error": "Phase inconnue"}), 400
+        
+        # Save results to DB
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Delete old results for this phase
+        c.execute("DELETE FROM evaluation_result WHERE evaluation_id = ? AND phase = ?", (eval_id, phase))
+        
+        # Insert new results
+        for result in results:
+            result_id = str(uuid.uuid4())
+            c.execute("""
+                INSERT INTO evaluation_result 
+                (id, evaluation_id, phase, company_name, amount, rank, gap_percent, status, reason)
+                VALUES (?,?,?,?,?,?,?,?,?)
+            """, (
+                result_id, eval_id, phase,
+                result['name'], result['amount'],
+                result['rank'], result['gap_percent'],
+                result['status'], result['reason']
+            ))
+        
+        # Update current phase
+        c.execute("UPDATE evaluation SET current_phase = ? WHERE id = ?", (phase, eval_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "phase": phase,
+            "results": results,
+            "kept": kept,
+            "message": f"{len(kept)} entreprise(s) relancée(s)"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/evaluations/<eval_id>/export", methods=["GET"])
+def export_evaluation(eval_id):
+    """Export evaluation to Excel"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        eval_row = c.execute("SELECT * FROM evaluation WHERE id = ?", (eval_id,)).fetchone()
+        if not eval_row:
+            return jsonify({"error": "Évaluation non trouvée"}), 404
+        
+        results = c.execute("SELECT * FROM evaluation_result WHERE evaluation_id = ? ORDER BY phase, rank", 
+                          (eval_id,)).fetchall()
+        conn.close()
+        
+        # Create workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Évaluation"
+        
+        # Header
+        ws['A1'] = dict(eval_row)['title']
+        ws['A1'].font = Font(bold=True, size=14)
+        ws['A2'] = f"Créée le {dict(eval_row)['created_date']}"
+        
+        # Column headers
+        headers = ["Phase", "Entreprise", "Montant", "Classement", "Écart %", "Statut", "Raison"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=4, column=col)
+            cell.value = header
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        
+        # Data rows
+        for row_idx, result in enumerate(results, 5):
+            r = dict(result)
+            ws.cell(row=row_idx, column=1).value = r['phase']
+            ws.cell(row=row_idx, column=2).value = r['company_name']
+            ws.cell(row=row_idx, column=3).value = r['amount']
+            ws.cell(row=row_idx, column=4).value = r['rank']
+            ws.cell(row=row_idx, column=5).value = f"{r['gap_percent']:.1f}%" if r['gap_percent'] else "-"
+            ws.cell(row=row_idx, column=6).value = r['status']
+            ws.cell(row=row_idx, column=7).value = r['reason']
+            
+            # Color by status
+            status_cell = ws.cell(row=row_idx, column=6)
+            if r['status'] == 'Écarté':
+                status_cell.fill = PatternFill(start_color="FFE6E6", end_color="FFE6E6", fill_type="solid")
+            elif 'Relancé' in r['status']:
+                status_cell.fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+            elif 'Retenu' in r['status']:
+                status_cell.fill = PatternFill(start_color="E6FFE6", end_color="E6FFE6", fill_type="solid")
+        
+        # Adjust column widths
+        ws.column_dimensions['A'].width = 12
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 10
+        ws.column_dimensions['E'].width = 10
+        ws.column_dimensions['F'].width = 15
+        ws.column_dimensions['G'].width = 25
+        
+        # Save to bytes
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        as_attachment=True, download_name=f"Evaluation_{eval_id[:8]}.xlsx")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/evaluations/<eval_id>", methods=["DELETE"])
+def delete_evaluation(eval_id):
+    """Delete evaluation"""
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM evaluation WHERE id = ?", (eval_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Évaluation supprimée"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── GENERATE EMPTY DB FOR DISTRIBUTION ────────────────────────────────────────
 def create_empty_db():
     """
@@ -1693,6 +2049,28 @@ def create_empty_db():
             done       INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (pr_id) REFERENCES pr(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS evaluation (
+            id              TEXT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            created_date    TEXT NOT NULL,
+            current_phase   TEXT NOT NULL DEFAULT 'OI',
+            data_json       TEXT NOT NULL,
+            results_json    TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS evaluation_result (
+            id              TEXT PRIMARY KEY,
+            evaluation_id   TEXT NOT NULL,
+            phase           TEXT NOT NULL,
+            company_name    TEXT NOT NULL,
+            amount          REAL NOT NULL,
+            rank            INTEGER,
+            gap_percent     REAL,
+            status          TEXT NOT NULL,
+            reason          TEXT,
+            FOREIGN KEY (evaluation_id) REFERENCES evaluation(id) ON DELETE CASCADE
         );
     """)
     conn.commit()

@@ -31,6 +31,8 @@ document.addEventListener("DOMContentLoaded", () => {
   bindDocumentsButton();
   bindKPIControls();
   bindKPISearch();
+  bindEvaluationsButton();
+  bindEvaluationNavigation();
 });
 
 /* ── CLOCK ──────────────────────────────────────────────────────────────────── */
@@ -1527,4 +1529,326 @@ function showToast(message, type = "success") {
     toast.classList.remove("show");
     setTimeout(() => toast.remove(), 400);
   }, 3000);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   EVALUATIONS MANAGEMENT
+   ════════════════════════════════════════════════════════════════════════════ */
+
+let currentEvaluationId = null;
+let currentEvalData = null;
+let currentPhase = null;
+
+function bindEvaluationsButton() {
+  const btn = document.getElementById("btnEvaluations");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      showView("evaluationsView");
+      loadEvaluationsList();
+    });
+  }
+}
+
+// Also add button bindings for navigation
+function bindEvaluationNavigation() {
+  const backBtn = document.getElementById("btnBackToDashFromEval");
+  if (backBtn) {
+    backBtn.addEventListener("click", () => showView("dashboardView"));
+  }
+  
+  const backBtn2 = document.getElementById("btnBackToEvalsList");
+  if (backBtn2) {
+    backBtn2.addEventListener("click", showEvaluationsListView);
+  }
+}
+
+async function loadEvaluationsList() {
+  try {
+    const evals = await api("/api/evaluations", "GET");
+    const tbody = document.getElementById("evaluationsTableBody");
+    
+    if (!evals || evals.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#999">Aucune évaluation créée</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = evals.map(e => `
+      <tr>
+        <td style="font-weight:600;color:#2C3E50">${e.title || 'Sans titre'}</td>
+        <td>${new Date(e.created_date).toLocaleString("fr-FR")}</td>
+        <td>
+          <span style="display:inline-block;padding:4px 10px;border-radius:4px;font-weight:600;
+          ${e.current_phase === 'OI' ? 'background:#FFE6B6;color:#8B5A00' : 
+            e.current_phase === 'OA1' ? 'background:#B6E6FF;color:#003D82' : 
+            'background:#B6FFB6;color:#005A00'}">
+            ${e.current_phase}
+          </span>
+        </td>
+        <td>
+          <button class="btn-secondary" onclick="loadEvaluationDetail('${e.id}')" style="padding:6px 10px;font-size:12px">
+            <span class="glyphicon glyphicon-eye-open"></span> Voir
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    showToast(`Erreur: ${e.message}`, "error");
+  }
+}
+
+function showNewEvaluationModal() {
+  document.getElementById("newEvaluationModal").style.display = "flex";
+  // Reset form
+  document.getElementById("evalTitleInput").value = "";
+  document.getElementById("companiesContainer").innerHTML = `
+    <div class="company-input-row" style="display:flex;gap:8px;margin-bottom:8px">
+      <input type="text" class="form-input company-name" placeholder="Nom de l'entreprise" style="flex:1">
+      <input type="number" class="form-input company-amount" placeholder="Montant" style="flex:0 0 120px">
+      <button type="button" class="btn-remove-company" onclick="removeCompanyInput(this)">
+        <span class="glyphicon glyphicon-remove"></span>
+      </button>
+    </div>
+  `;
+}
+
+function addCompanyInput() {
+  const container = document.getElementById("companiesContainer");
+  const row = document.createElement("div");
+  row.className = "company-input-row";
+  row.style.cssText = "display:flex;gap:8px;margin-bottom:8px";
+  row.innerHTML = `
+    <input type="text" class="form-input company-name" placeholder="Nom de l'entreprise" style="flex:1">
+    <input type="number" class="form-input company-amount" placeholder="Montant" style="flex:0 0 120px">
+    <button type="button" class="btn-remove-company" onclick="removeCompanyInput(this)">
+      <span class="glyphicon glyphicon-remove"></span>
+    </button>
+  `;
+  container.appendChild(row);
+}
+
+function removeCompanyInput(btn) {
+  btn.parentElement.remove();
+}
+
+async function startNewEvaluation() {
+  const title = document.getElementById("evalTitleInput").value.trim() || "Évaluation sans titre";
+  const rows = document.querySelectorAll(".company-input-row");
+  const companies = [];
+  
+  for (const row of rows) {
+    const name = row.querySelector(".company-name").value.trim();
+    const amount = parseFloat(row.querySelector(".company-amount").value);
+    
+    if (!name || isNaN(amount) || amount <= 0) {
+      showToast("Veuillez remplir tous les champs avec des valeurs valides", "error");
+      return;
+    }
+    companies.push({ name, amount });
+  }
+  
+  if (companies.length < 2) {
+    showToast("Vous devez entrer au moins 2 entreprises", "error");
+    return;
+  }
+  
+  try {
+    const result = await api("/api/evaluations", "POST", { title, companies });
+    currentEvaluationId = result.id;
+    closeModal("newEvaluationModal");
+    await loadEvaluationDetail(result.id);
+    showToast("Évaluation créée avec succès", "success");
+  } catch (e) {
+    showToast(`Erreur: ${e.message}`, "error");
+  }
+}
+
+async function loadEvaluationDetail(evalId) {
+  try {
+    const evalData = await api(`/api/evaluations/${evalId}`, "GET");
+    currentEvaluationId = evalId;
+    currentEvalData = evalData;
+    
+    document.getElementById("evalTitle").textContent = evalData.title;
+    showEvaluationDetailView();
+    
+    renderEvaluationPhases(evalData);
+    renderEvaluationResults(evalData.results);
+  } catch (e) {
+    showToast(`Erreur: ${e.message}`, "error");
+  }
+}
+
+function renderEvaluationPhases(evalData) {
+  const phasesDiv = document.getElementById("evaluationPhases");
+  const phases = ['OI', 'OA1', 'OA2'];
+  const phaseInfo = {
+    'OI': 'Gardez les 3 moins chers + le 4ème si écart < 15%',
+    'OA1': 'Gardez le moins cher + écart < 5% (conservez le moins cher de OI)',
+    'OA2': 'Gardez uniquement le moins cher'
+  };
+  
+  phasesDiv.innerHTML = phases.map((phase, idx) => `
+    <div class="phase-card" style="border:1px solid #E0E0E0;border-radius:8px;padding:16px;background:#F9FAFB">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h4 style="margin:0;color:#2C3E50">${phase}</h4>
+        ${evalData.current_phase === phase || (idx > 0 && phases.indexOf(evalData.current_phase) >= idx) 
+          ? `<span style="font-size:12px;background:#E8F5E9;color:#2E7D32;padding:4px 8px;border-radius:4px;font-weight:600">Complété</span>`
+          : `<span style="font-size:12px;background:#FFF3E0;color:#E65100;padding:4px 8px;border-radius:4px;font-weight:600">En attente</span>`
+        }
+      </div>
+      <p style="margin:0 0 12px 0;font-size:13px;color:#666">${phaseInfo[phase]}</p>
+      <button class="btn-secondary" onclick="openEvaluatePhaseModal('${phase}')" style="width:100%;padding:10px;font-size:12px">
+        <span class="glyphicon glyphicon-calculator"></span> ${evalData.current_phase === phase ? 'Réévaluer' : 'Évaluer'}
+      </button>
+    </div>
+  `).join('');
+}
+
+function openEvaluatePhaseModal(phase) {
+  currentPhase = phase;
+  const phaseInfo = {
+    'OI': { title: 'Offre Initiale', info: 'Gardez les 3 moins chers + le 4ème si écart < 15%' },
+    'OA1': { title: 'Offre Améliorée 1', info: 'Gardez le moins cher + écart < 5% (conservez le moins cher de OI)' },
+    'OA2': { title: 'Offre Améliorée 2', info: 'Gardez uniquement le moins cher' }
+  };
+  
+  document.getElementById("evaluatePhaseTitle").textContent = phaseInfo[phase].title;
+  document.getElementById("phaseInfo").textContent = phaseInfo[phase].info;
+  
+  // Get companies for this phase
+  const companies = phase === 'OI' 
+    ? currentEvalData.data
+    : currentEvalData.results
+        .filter(r => r.phase === (phase === 'OA1' ? 'OI' : 'OA1') && r.status.includes('Relancé'))
+        .map(r => ({ name: r.company_name, amount: r.amount }));
+  
+  const container = document.getElementById("phaseCompaniesContainer");
+  container.innerHTML = companies.map((c, idx) => `
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input type="text" class="form-input phase-company-name" value="${c.name}" readonly style="flex:1;background:#f5f5f5">
+      <input type="number" class="form-input phase-company-amount" value="${c.amount}" step="0.01" style="flex:0 0 120px">
+    </div>
+  `).join('');
+  
+  document.getElementById("evaluatePhaseModal").style.display = "flex";
+}
+
+async function submitPhaseEvaluation() {
+  const rows = document.querySelectorAll("#phaseCompaniesContainer > div");
+  const companies = [];
+  
+  for (const row of rows) {
+    const name = row.querySelector(".phase-company-name").value.trim();
+    const amount = parseFloat(row.querySelector(".phase-company-amount").value);
+    
+    if (!name || isNaN(amount) || amount <= 0) {
+      showToast("Valeurs invalides", "error");
+      return;
+    }
+    companies.push({ name, amount });
+  }
+  
+  try {
+    const payload = {
+      phase: currentPhase,
+      companies
+    };
+    
+    // For OA1, we need to pass the initial cheapest
+    if (currentPhase === 'OA1') {
+      const oiResults = currentEvalData.results.filter(r => r.phase === 'OI');
+      const initialCheapest = oiResults.find(r => r.rank === 1)?.company_name;
+      payload.initialCheapest = initialCheapest;
+    }
+    
+    const result = await api(`/api/evaluations/${currentEvaluationId}/evaluate`, "POST", payload);
+    closeModal("evaluatePhaseModal");
+    
+    // Reload evaluation
+    await loadEvaluationDetail(currentEvaluationId);
+    showToast(result.message, "success");
+  } catch (e) {
+    showToast(`Erreur: ${e.message}`, "error");
+  }
+}
+
+function renderEvaluationResults(results) {
+  const wrapper = document.getElementById("resultsTableWrapper");
+  const tbody = document.getElementById("resultsTableBody");
+  
+  if (!results || results.length === 0) {
+    wrapper.style.display = "none";
+    return;
+  }
+  
+  wrapper.style.display = "block";
+  
+  // Group by phase
+  const byPhase = {};
+  results.forEach(r => {
+    if (!byPhase[r.phase]) byPhase[r.phase] = [];
+    byPhase[r.phase].push(r);
+  });
+  
+  let html = '';
+  Object.entries(byPhase).forEach(([phase, phaseResults]) => {
+    phaseResults.forEach((r, idx) => {
+      const bgColor = r.status === 'Écarté' ? '#FFE6E6' : 
+                      r.status.includes('Relancé') ? '#E6F3FF' : '#E6FFE6';
+      html += `
+        <tr style="background-color:${bgColor}">
+          <td>${idx === 0 ? phase : ''}</td>
+          <td>${r.company_name}</td>
+          <td style="text-align:right;font-weight:600">${r.amount.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} €</td>
+          <td style="text-align:center">${r.rank || '-'}</td>
+          <td style="text-align:center">${r.gap_percent !== null ? `${r.gap_percent.toFixed(1)}%` : '-'}</td>
+          <td style="font-weight:600">${r.status}</td>
+          <td style="font-size:12px;color:#666">${r.reason}</td>
+        </tr>
+      `;
+    });
+  });
+  
+  tbody.innerHTML = html;
+}
+
+function showEvaluationsListView() {
+  document.getElementById("evaluationsListView").style.display = "block";
+  document.getElementById("evaluationDetailView").style.display = "none";
+  loadEvaluationsList();
+}
+
+function showEvaluationDetailView() {
+  document.getElementById("evaluationsListView").style.display = "none";
+  document.getElementById("evaluationDetailView").style.display = "block";
+  
+  const exportBtn = document.getElementById("btnExportEval");
+  const deleteBtn = document.getElementById("btnDeleteEval");
+  
+  exportBtn.onclick = async () => {
+    try {
+      const response = await fetch(`/api/evaluations/${currentEvaluationId}/export`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Evaluation_${currentEvaluationId.substring(0, 8)}.xlsx`;
+      a.click();
+      showToast("Excel exporté", "success");
+    } catch (e) {
+      showToast(`Erreur: ${e.message}`, "error");
+    }
+  };
+  
+  deleteBtn.onclick = async () => {
+    if (confirm("Êtes-vous sûr de vouloir supprimer cette évaluation ?")) {
+      try {
+        await api(`/api/evaluations/${currentEvaluationId}`, "DELETE");
+        showToast("Évaluation supprimée", "success");
+        showEvaluationsListView();
+      } catch (e) {
+        showToast(`Erreur: ${e.message}`, "error");
+      }
+    }
+  };
 }

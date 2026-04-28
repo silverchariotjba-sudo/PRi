@@ -330,7 +330,7 @@
   </div>
 </div>
 
-<!-- ═══════════════════ STEP EDIT MODAL ══════════════════════════════════ -->
+<!-- ═══════════════════ STEP EDIT MODAL ═════════════════════��════════════ -->
 <div id="stepEditModal" class="modal" style="display:none">
   <div class="modal-content" style="max-width:500px">
     <div class="modal-header">
@@ -472,6 +472,176 @@
           <span class="glyphicon glyphicon-ok"></span> Enregistrer
         </button>
         <button style="flex:1;padding:10px;background:var(--grey-200);color:var(--grey-900);border:none;border-radius:6px;font-weight:600;cursor:pointer" onclick="closeModal('prDocEditModal')">
+          Annuler
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ EVALUATIONS VIEW ════════════════════════════════════ -->
+<div id="evaluationsView" class="view">
+  <div class="page-header-custom">
+    <div>
+      <button class="btn-back" id="btnBackToDashFromEval">
+        <span class="glyphicon glyphicon-chevron-left"></span> Retour
+      </button>
+      <h2 class="page-title">
+        <span class="glyphicon glyphicon-calculator"></span>
+        Évaluations Financières
+      </h2>
+      <p class="page-subtitle">Outil d'évaluation des offres (OI, OA1, OA2)</p>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;margin-bottom:20px">
+    <button class="btn-primary" id="btnNewEvaluation" onclick="showNewEvaluationModal()">
+      <span class="glyphicon glyphicon-plus"></span> Nouvelle Évaluation
+    </button>
+    <button class="btn-secondary" id="btnRefreshEvals" onclick="loadEvaluationsList()">
+      <span class="glyphicon glyphicon-refresh"></span> Actualiser
+    </button>
+  </div>
+
+  <div id="evaluationsListView">
+    <div class="kpi-table-wrapper">
+      <table class="kpi-processing-table" id="evaluationsTable">
+        <thead>
+          <tr>
+            <th>Titre</th>
+            <th>Créée le</th>
+            <th>Phase actuelle</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="evaluationsTableBody">
+          <tr><td colspan="4" style="text-align:center;padding:20px;color:#999">Chargement...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="evaluationDetailView" style="display:none">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <button class="btn-back" id="btnBackToEvalsList">
+        <span class="glyphicon glyphicon-chevron-left"></span> Retour à la liste
+      </button>
+      <h3 id="evalTitle" style="margin:0;flex:1"></h3>
+      <button id="btnExportEval" class="btn-secondary">
+        <span class="glyphicon glyphicon-download-alt"></span> Exporter Excel
+      </button>
+      <button id="btnDeleteEval" class="btn-danger" style="background:#FF6B6B;border:none;color:white;padding:10px 15px;border-radius:6px;cursor:pointer">
+        <span class="glyphicon glyphicon-trash"></span> Supprimer
+      </button>
+    </div>
+
+    <!-- Evaluation Phases -->
+    <div id="evaluationPhases" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px">
+      <!-- Dynamically populated -->
+    </div>
+
+    <!-- Results Table -->
+    <div class="kpi-table-wrapper" id="resultsTableWrapper" style="display:none;margin-top:20px">
+      <h4 style="margin-bottom:12px">Résultats</h4>
+      <table class="kpi-processing-table" id="resultsTable">
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Entreprise</th>
+            <th>Montant</th>
+            <th class="text-center">Classement</th>
+            <th class="text-center">Écart %</th>
+            <th>Statut</th>
+            <th>Raison</th>
+          </tr>
+        </thead>
+        <tbody id="resultsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ NEW EVALUATION MODAL ═════════════════════════════════ -->
+<div id="newEvaluationModal" class="modal" style="display:none">
+  <div class="modal-content" style="max-width:700px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 class="modal-title">
+        <span class="glyphicon glyphicon-plus"></span>
+        Nouvelle Évaluation
+      </h3>
+      <button class="modal-close" onclick="closeModal('newEvaluationModal')">&times;</button>
+    </div>
+    
+    <div class="modal-body">
+      <div style="margin-bottom:16px">
+        <label class="form-label">Titre de l'évaluation</label>
+        <input type="text" id="evalTitleInput" class="form-input" placeholder="Ex: Évaluation - PR 2025-001">
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span class="glyphicon glyphicon-th-list"></span>
+          Entreprises et montants OI (Offre Initiale)
+        </label>
+        <div id="companiesContainer">
+          <div class="company-input-row" style="display:flex;gap:8px;margin-bottom:8px">
+            <input type="text" class="form-input company-name" placeholder="Nom de l'entreprise" style="flex:1">
+            <input type="number" class="form-input company-amount" placeholder="Montant" style="flex:0 0 120px">
+            <button type="button" class="btn-remove-company" onclick="removeCompanyInput(this)">
+              <span class="glyphicon glyphicon-remove"></span>
+            </button>
+          </div>
+        </div>
+        <button type="button" class="btn-secondary" onclick="addCompanyInput()" style="margin-top:8px">
+          <span class="glyphicon glyphicon-plus"></span> Ajouter une entreprise
+        </button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:20px">
+        <button class="btn-primary" onclick="startNewEvaluation()" style="flex:1;padding:12px">
+          <span class="glyphicon glyphicon-ok"></span> Créer et Commencer
+        </button>
+        <button style="flex:1;padding:12px;background:#E0E0E0;color:#333;border:none;border-radius:6px;font-weight:600;cursor:pointer" onclick="closeModal('newEvaluationModal')">
+          Annuler
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ EVALUATE PHASE MODAL ════════════════════════════════ -->
+<div id="evaluatePhaseModal" class="modal" style="display:none">
+  <div class="modal-content" style="max-width:700px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 class="modal-title" id="evaluatePhaseTitle">
+        <span class="glyphicon glyphicon-calculator"></span>
+        Évaluer OI
+      </h3>
+      <button class="modal-close" onclick="closeModal('evaluatePhaseModal')">&times;</button>
+    </div>
+    
+    <div class="modal-body">
+      <div style="margin-bottom:16px">
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span class="glyphicon glyphicon-th-list"></span>
+          Montants à évaluer
+        </label>
+        <div id="phaseCompaniesContainer">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <div style="background:#E8F4F8;border:1px solid #B0DFE5;border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px">
+        <span class="glyphicon glyphicon-info-sign"></span>
+        <strong>Information phase:</strong>
+        <p id="phaseInfo" style="margin:8px 0 0 0"></p>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="submitPhaseEvaluation()" style="flex:1;padding:12px">
+          <span class="glyphicon glyphicon-ok"></span> Évaluer
+        </button>
+        <button style="flex:1;padding:12px;background:#E0E0E0;color:#333;border:none;border-radius:6px;font-weight:600;cursor:pointer" onclick="closeModal('evaluatePhaseModal')">
           Annuler
         </button>
       </div>
