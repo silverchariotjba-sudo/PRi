@@ -525,18 +525,7 @@ def evaluation():
 
 @app.route("/")
 def index():
-    try:
-        lost_days = int(lost_days)
-        if lost_days < 0:
-            lost_days = 0
-    except (ValueError, TypeError):
-        conn.close()
-        return jsonify({"error": "Jours perdus invalides"}), 400
-    
-    conn.execute("UPDATE pr SET lost_days = ? WHERE id = ?", (lost_days, pr_id))
-    conn.commit()
-    conn.close()
-    return jsonify({"message": "Jours perdus mis à jour", "lost_days": lost_days})
+    return render_template("index.html")
 
 
 # ── STATUS ────────────────────────────────────────────────────────────────────
