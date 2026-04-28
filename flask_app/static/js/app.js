@@ -31,7 +31,15 @@ document.addEventListener("DOMContentLoaded", () => {
   bindDocumentsButton();
   bindKPIControls();
   bindKPISearch();
+  bindFinancialEvalButton();
 });
+
+function bindFinancialEvalButton() {
+  const btn = document.getElementById("btnFinancialEval");
+  if (btn) {
+    btn.addEventListener("click", switchToEvaluationView);
+  }
+}
 
 /* ── CLOCK ──────────────────────────────────────────────────────────────────── */
 function clock() {
@@ -1511,7 +1519,7 @@ async function saveLostDays(prId) {
   }
 }
 
-/* ── TOAST ──────────────────────────────────────────────────────────────────── */
+/* ── TOAST ──────────────────────────────────────────────────────────────────���─ */
 function showToast(message, type = "success") {
   const existing = document.querySelector(".toast-notification");
   if (existing) existing.remove();
@@ -1542,12 +1550,126 @@ let currentEvaluation = {
   }
 };
 
+function switchToEvaluationView() {
+  showView("evaluationView");
+  loadEvaluationsList();
+}
+
 function openFinancialEvaluationModal() {
-  const prId = currentPR.id;
-  if (!prId) {
-    showToast("Aucune PR sélectionnée", "error");
+  // Initialize evaluation
+  currentEvaluation = {
+    id: null,
+    pr_id: null,
+    title: "Nouvelle Évaluation",
+    phases: {
+      OI: { companies: [], results: null },
+      OA1: { companies: [], results: null },
+      OA2: { companies: [], results: null }
+    }
+  };
+  
+  const titleInput = document.getElementById("evalTitle");
+  if (titleInput) {
+    titleInput.value = currentEvaluation.title;
+  }
+  resetEvaluationUI();
+  openModal("financialEvaluationModal");
+}
+
+function createNewEvaluation() {
+  openFinancialEvaluationModal();
+}
+
+async function loadEvaluationsList() {
+  try {
+    const response = await fetch(`/api/pr/${selectedPRId || 'all'}/evaluations`);
+    const evals = await response.json();
+    renderEvaluationsList(evals);
+  } catch (err) {
+    console.log("[v0] Could not load evaluations");
+  }
+}
+
+function renderEvaluationsList(evals) {
+  const container = document.getElementById("evaluationsList");
+  if (!container) return;
+  
+  if (!evals || evals.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#999;padding:40px"><span class="glyphicon glyphicon-inbox" style="font-size:48px;margin-bottom:12px;display:block"></span><p>Aucune évaluation trouvée</p><p style="font-size:12px">Cliquez sur "Nouvelle Évaluation" pour en créer une</p></div>';
     return;
   }
+  
+  container.innerHTML = evals.map(e => `
+    <div class="evaluation-card" style="padding:16px;background:white;border:1px solid #E0E0E0;border-radius:8px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+          <h4 style="margin:0 0 6px 0;color:#2C3E50">${escapeHtml(e.title)}</h4>
+          <p style="margin:0;font-size:12px;color:#7F8C8D">Phase: <strong>${e.phase}</strong> • Créée: ${e.created_date}</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="editEvaluation('${e.id}')" style="padding:6px 12px;background:#3498DB;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px">
+            <span class="glyphicon glyphicon-edit"></span> Voir
+          </button>
+          <button onclick="deleteEvaluation('${e.id}')" style="padding:6px 12px;background:#E74C3C;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px">
+            <span class="glyphicon glyphicon-trash"></span> Supprimer
+          </button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function editEvaluation(evalId) {
+  try {
+    const response = await fetch(`/api/financial-evaluation/${evalId}`);
+    const data = await response.json();
+    
+    currentEvaluation = {
+      id: data.id,
+      pr_id: data.pr_id,
+      title: data.title,
+      phases: data.data.phases || {
+        OI: { companies: [], results: null },
+        OA1: { companies: [], results: null },
+        OA2: { companies: [], results: null }
+      }
+    };
+    
+    const titleInput = document.getElementById("evalTitle");
+    if (titleInput) {
+      titleInput.value = currentEvaluation.title;
+    }
+    resetEvaluationUI();
+    
+    // Restore phase data if exists
+    Object.keys(currentEvaluation.phases).forEach(phase => {
+      if (currentEvaluation.phases[phase].companies && currentEvaluation.phases[phase].companies.length > 0) {
+        renderCompaniesTable(phase);
+      }
+      if (currentEvaluation.phases[phase].results) {
+        renderPhaseResults(phase, currentEvaluation.phases[phase].results);
+      }
+    });
+    
+    openModal("financialEvaluationModal");
+  } catch (err) {
+    console.log("[v0] Could not load evaluation:", err);
+    showToast("Erreur lors du chargement", "error");
+  }
+}
+
+async function deleteEvaluation(evalId) {
+  if (!confirm("Êtes-vous sûr de vouloir supprimer cette évaluation?")) return;
+  
+  try {
+    await fetch(`/api/financial-evaluation/${evalId}`, { method: "DELETE" });
+    showToast("Évaluation supprimée", "success");
+    loadEvaluationsList();
+  } catch (err) {
+    console.log("[v0] Delete error:", err);
+    showToast("Erreur lors de la suppression", "error");
+  }
+}
   
   // Initialize evaluation
   currentEvaluation = {
@@ -1875,6 +1997,12 @@ function renderOA2Results(results) {
   
   document.getElementById("resultsOA2Content").innerHTML = html;
   document.getElementById("resultsOA2").style.display = "block";
+}
+
+function renderPhaseResults(phase, results) {
+  if (phase === "OI") renderOIResults(results);
+  else if (phase === "OA1") renderOA1Results(results);
+  else if (phase === "OA2") renderOA2Results(results);
 }
 
 async function saveEvaluation() {

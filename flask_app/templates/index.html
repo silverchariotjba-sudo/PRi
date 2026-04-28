@@ -188,10 +188,6 @@
         <span class="glyphicon glyphicon-folder-open"></span>
         Documents de la PR
       </button>
-      <button class="btn-financial-eval" id="btnFinancialEval" onclick="openFinancialEvaluationModal()">
-        <span class="glyphicon glyphicon-euro"></span>
-        Évaluation Financière
-      </button>
       <div class="progress-ring-wrapper">
         <svg class="progress-ring" viewBox="0 0 64 64">
           <circle class="ring-bg" cx="32" cy="32" r="28" />
@@ -215,6 +211,9 @@
   </div>
   <div id="checklistContainer" class="checklist-container"></div>
 </div>
+
+<!-- ═══════════════════ FINANCIAL EVALUATION VIEW ════════════════════════ -->
+{% include 'evaluation.html' %}
 
 <!-- ═══════════════════ DOCUMENTS MODAL ═════════════════════════════════ -->
 <div id="documentsModal" class="modal" style="display:none">
@@ -477,167 +476,6 @@
         </button>
         <button style="flex:1;padding:10px;background:var(--grey-200);color:var(--grey-900);border:none;border-radius:6px;font-weight:600;cursor:pointer" onclick="closeModal('prDocEditModal')">
           Annuler
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════ FINANCIAL EVALUATION MODAL ════════════════════════ -->
-<div id="financialEvaluationModal" class="modal" style="display:none">
-  <div class="modal-content" style="max-width:900px;max-height:90vh;overflow-y:auto">
-    <div class="modal-header">
-      <h3 class="modal-title">
-        <span class="glyphicon glyphicon-euro"></span>
-        Évaluation Financière des Offres
-      </h3>
-      <button class="modal-close" onclick="closeModal('financialEvaluationModal')">&times;</button>
-    </div>
-    
-    <div class="modal-body">
-      <!-- Title Input -->
-      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #E0E0E0">
-        <label class="form-label">Titre de l'évaluation</label>
-        <input type="text" id="evalTitle" class="form-input" placeholder="Ex: Évaluation des fournisseurs pour équipements">
-      </div>
-      
-      <!-- Tab Navigation -->
-      <div class="eval-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid #D0D0D0">
-        <button class="eval-tab-btn active" onclick="switchEvalTab('OI')" id="tabOI">
-          <span class="glyphicon glyphicon-list"></span> OI (Offres Initiales)
-        </button>
-        <button class="eval-tab-btn" onclick="switchEvalTab('OA1')" id="tabOA1" disabled>
-          <span class="glyphicon glyphicon-ok"></span> OA1 (Offres Améliorées 1)
-        </button>
-        <button class="eval-tab-btn" onclick="switchEvalTab('OA2')" id="tabOA2" disabled>
-          <span class="glyphicon glyphicon-star"></span> OA2 (Offres Améliorées 2)
-        </button>
-      </div>
-      
-      <!-- OI Phase Tab -->
-      <div id="tabContentOI" class="eval-tab-content" style="display:block">
-        <h4 style="margin:0 0 12px 0">Phase OI - Saisie des offres</h4>
-        <p style="color:#666;font-size:13px;margin-bottom:12px">Critère: Garder les 3 moins-disants + 4ème si écart &lt; 15%</p>
-        
-        <div class="companies-table" style="margin-bottom:16px">
-          <div style="display:flex;gap:8px;margin-bottom:8px">
-            <input type="text" id="companyNameOI" class="form-input" placeholder="Nom du fournisseur" style="flex:2">
-            <input type="number" id="companyAmountOI" class="form-input" placeholder="Montant" style="flex:1">
-            <button class="btn-primary" onclick="addCompanyOI()" style="padding:8px 16px;white-space:nowrap">
-              <span class="glyphicon glyphicon-plus"></span> Ajouter
-            </button>
-          </div>
-          
-          <table class="eval-companies-table" id="tableOI">
-            <thead>
-              <tr>
-                <th>Fournisseur</th>
-                <th style="text-align:right">Montant</th>
-                <th style="text-align:center">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="tableOIBody"></tbody>
-          </table>
-        </div>
-        
-        <button class="btn-primary" onclick="evaluatePhaseOI()" style="width:100%;padding:10px;margin-top:12px;font-size:13px;font-weight:600">
-          <span class="glyphicon glyphicon-play"></span> Évaluer OI
-        </button>
-        
-        <!-- OI Results -->
-        <div id="resultsOI" style="margin-top:16px;display:none;padding:12px;background:#F5F5F5;border-radius:6px">
-          <h5 style="margin-top:0">Résultats OI</h5>
-          <div id="resultsOIContent"></div>
-        </div>
-      </div>
-      
-      <!-- OA1 Phase Tab -->
-      <div id="tabContentOA1" class="eval-tab-content" style="display:none">
-        <h4 style="margin:0 0 12px 0">Phase OA1 - Saisie des offres</h4>
-        <p style="color:#666;font-size:13px;margin-bottom:12px">Critère: Garder le moins-disant + autres avec écart &lt; 5%</p>
-        
-        <div class="companies-table" style="margin-bottom:16px">
-          <div style="display:flex;gap:8px;margin-bottom:8px">
-            <input type="text" id="companyNameOA1" class="form-input" placeholder="Nom du fournisseur" style="flex:2">
-            <input type="number" id="companyAmountOA1" class="form-input" placeholder="Montant" style="flex:1">
-            <button class="btn-primary" onclick="addCompanyOA1()" style="padding:8px 16px;white-space:nowrap">
-              <span class="glyphicon glyphicon-plus"></span> Ajouter
-            </button>
-          </div>
-          
-          <table class="eval-companies-table" id="tableOA1">
-            <thead>
-              <tr>
-                <th>Fournisseur</th>
-                <th style="text-align:right">Montant</th>
-                <th style="text-align:center">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="tableOA1Body"></tbody>
-          </table>
-        </div>
-        
-        <button class="btn-primary" onclick="evaluatePhaseOA1()" style="width:100%;padding:10px;margin-top:12px;font-size:13px;font-weight:600">
-          <span class="glyphicon glyphicon-play"></span> Évaluer OA1
-        </button>
-        
-        <!-- OA1 Results -->
-        <div id="resultsOA1" style="margin-top:16px;display:none;padding:12px;background:#F5F5F5;border-radius:6px">
-          <h5 style="margin-top:0">Résultats OA1</h5>
-          <div id="resultsOA1Content"></div>
-        </div>
-      </div>
-      
-      <!-- OA2 Phase Tab -->
-      <div id="tabContentOA2" class="eval-tab-content" style="display:none">
-        <h4 style="margin:0 0 12px 0">Phase OA2 - Saisie des offres</h4>
-        <p style="color:#666;font-size:13px;margin-bottom:12px">Critère: Garder uniquement le moins-disant</p>
-        
-        <div class="companies-table" style="margin-bottom:16px">
-          <div style="display:flex;gap:8px;margin-bottom:8px">
-            <input type="text" id="companyNameOA2" class="form-input" placeholder="Nom du fournisseur" style="flex:2">
-            <input type="number" id="companyAmountOA2" class="form-input" placeholder="Montant" style="flex:1">
-            <button class="btn-primary" onclick="addCompanyOA2()" style="padding:8px 16px;white-space:nowrap">
-              <span class="glyphicon glyphicon-plus"></span> Ajouter
-            </button>
-          </div>
-          
-          <table class="eval-companies-table" id="tableOA2">
-            <thead>
-              <tr>
-                <th>Fournisseur</th>
-                <th style="text-align:right">Montant</th>
-                <th style="text-align:center">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="tableOA2Body"></tbody>
-          </table>
-        </div>
-        
-        <button class="btn-primary" onclick="evaluatePhaseOA2()" style="width:100%;padding:10px;margin-top:12px;font-size:13px;font-weight:600">
-          <span class="glyphicon glyphicon-play"></span> Évaluer OA2
-        </button>
-        
-        <!-- OA2 Results -->
-        <div id="resultsOA2" style="margin-top:16px;display:none;padding:12px;background:#F5F5F5;border-radius:6px">
-          <h5 style="margin-top:0">Résultats OA2</h5>
-          <div id="resultsOA2Content"></div>
-        </div>
-      </div>
-      
-      <!-- Action Buttons -->
-      <div style="display:flex;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid #E0E0E0">
-        <button class="btn-primary" onclick="saveEvaluation()" style="flex:1;padding:10px">
-          <span class="glyphicon glyphicon-floppy-disk"></span> Enregistrer
-        </button>
-        <button onclick="exportEvaluation()" style="flex:1;padding:10px;background:#FFA500;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">
-          <span class="glyphicon glyphicon-download-alt"></span> Exporter Excel
-        </button>
-        <button onclick="resetEvaluation()" style="flex:1;padding:10px;background:#E74C3C;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer">
-          <span class="glyphicon glyphicon-trash"></span> Réinitialiser
-        </button>
-        <button style="flex:1;padding:10px;background:var(--grey-200);color:var(--grey-900);border:none;border-radius:6px;font-weight:600;cursor:pointer" onclick="closeModal('financialEvaluationModal')">
-          Fermer
         </button>
       </div>
     </div>
