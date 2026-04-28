@@ -1528,3 +1528,439 @@ function showToast(message, type = "success") {
     setTimeout(() => toast.remove(), 400);
   }, 3000);
 }
+
+/* ── FINANCIAL EVALUATION ───────────────────────────────────────────────────── */
+
+let currentEvaluation = {
+  id: null,
+  pr_id: null,
+  title: "",
+  phases: {
+    OI: { companies: [], results: null },
+    OA1: { companies: [], results: null },
+    OA2: { companies: [], results: null }
+  }
+};
+
+function openFinancialEvaluationModal() {
+  const prId = currentPR.id;
+  if (!prId) {
+    showToast("Aucune PR sélectionnée", "error");
+    return;
+  }
+  
+  // Initialize evaluation
+  currentEvaluation = {
+    id: null,
+    pr_id: prId,
+    title: `Évaluation - PR #${currentPR.number}`,
+    phases: {
+      OI: { companies: [], results: null },
+      OA1: { companies: [], results: null },
+      OA2: { companies: [], results: null }
+    }
+  };
+  
+  document.getElementById("evalTitle").value = currentEvaluation.title;
+  resetEvaluationUI();
+  openModal("financialEvaluationModal");
+}
+
+function resetEvaluationUI() {
+  // Clear all company tables
+  ["OI", "OA1", "OA2"].forEach(phase => {
+    document.getElementById(`table${phase}Body`).innerHTML = "";
+    document.getElementById(`results${phase}`).style.display = "none";
+  });
+  
+  // Reset input fields
+  document.getElementById("companyNameOI").value = "";
+  document.getElementById("companyAmountOI").value = "";
+  document.getElementById("companyNameOA1").value = "";
+  document.getElementById("companyAmountOA1").value = "";
+  document.getElementById("companyNameOA2").value = "";
+  document.getElementById("companyAmountOA2").value = "";
+  
+  // Disable OA1 and OA2 tabs
+  document.getElementById("tabOA1").disabled = true;
+  document.getElementById("tabOA2").disabled = true;
+}
+
+function switchEvalTab(phase) {
+  ["OI", "OA1", "OA2"].forEach(p => {
+    document.getElementById(`tabContent${p}`).style.display = p === phase ? "block" : "none";
+    document.getElementById(`tab${p}`).classList.toggle("active", p === phase);
+  });
+}
+
+function addCompanyOI() {
+  const name = document.getElementById("companyNameOI").value.trim();
+  const amount = parseFloat(document.getElementById("companyAmountOI").value);
+  
+  if (!name || isNaN(amount) || amount <= 0) {
+    showToast("Nom et montant requis", "error");
+    return;
+  }
+  
+  currentEvaluation.phases.OI.companies.push({ name, amount });
+  renderCompaniesTable("OI");
+  
+  document.getElementById("companyNameOI").value = "";
+  document.getElementById("companyAmountOI").value = "";
+}
+
+function addCompanyOA1() {
+  const name = document.getElementById("companyNameOA1").value.trim();
+  const amount = parseFloat(document.getElementById("companyAmountOA1").value);
+  
+  if (!name || isNaN(amount) || amount <= 0) {
+    showToast("Nom et montant requis", "error");
+    return;
+  }
+  
+  currentEvaluation.phases.OA1.companies.push({ name, amount });
+  renderCompaniesTable("OA1");
+  
+  document.getElementById("companyNameOA1").value = "";
+  document.getElementById("companyAmountOA1").value = "";
+}
+
+function addCompanyOA2() {
+  const name = document.getElementById("companyNameOA2").value.trim();
+  const amount = parseFloat(document.getElementById("companyAmountOA2").value);
+  
+  if (!name || isNaN(amount) || amount <= 0) {
+    showToast("Nom et montant requis", "error");
+    return;
+  }
+  
+  currentEvaluation.phases.OA2.companies.push({ name, amount });
+  renderCompaniesTable("OA2");
+  
+  document.getElementById("companyNameOA2").value = "";
+  document.getElementById("companyAmountOA2").value = "";
+}
+
+function removeCompany(phase, index) {
+  currentEvaluation.phases[phase].companies.splice(index, 1);
+  renderCompaniesTable(phase);
+}
+
+function renderCompaniesTable(phase) {
+  const companies = currentEvaluation.phases[phase].companies;
+  const tbody = document.getElementById(`table${phase}Body`);
+  
+  tbody.innerHTML = companies.map((c, i) => `
+    <tr>
+      <td>${escapeHtml(c.name)}</td>
+      <td style="text-align:right">${formatAmount(c.amount)}</td>
+      <td style="text-align:center">
+        <button onclick="removeCompany('${phase}', ${i})" style="background:#E74C3C;color:white;border:none;border-radius:3px;padding:4px 8px;cursor:pointer;font-size:11px">
+          <span class="glyphicon glyphicon-trash"></span> Supprimer
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function formatAmount(amount) {
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(amount);
+}
+
+async function evaluatePhaseOI() {
+  const companies = currentEvaluation.phases.OI.companies;
+  
+  if (companies.length === 0) {
+    showToast("Ajoutez au moins un fournisseur", "error");
+    return;
+  }
+  
+  try {
+    const response = await fetch("/api/financial-evaluation/evaluate-phase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phase: "OI",
+        companies: companies,
+        previous_winners: []
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      showToast("Erreur lors de l'évaluation", "error");
+      return;
+    }
+    
+    currentEvaluation.phases.OI.results = data.results;
+    renderOIResults(data.results);
+    
+    // Enable OA1 tab
+    document.getElementById("tabOA1").disabled = false;
+    showToast("OI évaluée avec succès", "success");
+    
+  } catch (err) {
+    console.error("[v0] Evaluation error:", err);
+    showToast("Erreur lors de l'évaluation", "error");
+  }
+}
+
+async function evaluatePhaseOA1() {
+  const companies = currentEvaluation.phases.OA1.companies;
+  const prevWinners = currentEvaluation.phases.OI.results?.passed || [];
+  
+  if (companies.length === 0) {
+    showToast("Ajoutez au moins un fournisseur", "error");
+    return;
+  }
+  
+  if (prevWinners.length === 0) {
+    showToast("Évaluez d'abord la phase OI", "error");
+    return;
+  }
+  
+  try {
+    const response = await fetch("/api/financial-evaluation/evaluate-phase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phase: "OA1",
+        companies: companies,
+        previous_winners: prevWinners
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      showToast("Erreur lors de l'évaluation", "error");
+      return;
+    }
+    
+    currentEvaluation.phases.OA1.results = data.results;
+    renderOA1Results(data.results);
+    
+    // Enable OA2 tab
+    document.getElementById("tabOA2").disabled = false;
+    showToast("OA1 évaluée avec succès", "success");
+    
+  } catch (err) {
+    console.error("[v0] Evaluation error:", err);
+    showToast("Erreur lors de l'évaluation", "error");
+  }
+}
+
+async function evaluatePhaseOA2() {
+  const companies = currentEvaluation.phases.OA2.companies;
+  const prevWinners = currentEvaluation.phases.OA1.results?.passed || [];
+  
+  if (companies.length === 0) {
+    showToast("Ajoutez au moins un fournisseur", "error");
+    return;
+  }
+  
+  if (prevWinners.length === 0) {
+    showToast("Évaluez d'abord la phase OA1", "error");
+    return;
+  }
+  
+  try {
+    const response = await fetch("/api/financial-evaluation/evaluate-phase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phase: "OA2",
+        companies: companies,
+        previous_winners: prevWinners
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      showToast("Erreur lors de l'évaluation", "error");
+      return;
+    }
+    
+    currentEvaluation.phases.OA2.results = data.results;
+    renderOA2Results(data.results);
+    showToast("OA2 évaluée avec succès", "success");
+    
+  } catch (err) {
+    console.error("[v0] Evaluation error:", err);
+    showToast("Erreur lors de l'évaluation", "error");
+  }
+}
+
+function renderOIResults(results) {
+  const passed = results.passed || [];
+  const eliminated = results.eliminated || [];
+  
+  let html = `
+    <div style="margin-bottom:12px">
+      <strong style="color:#27AE60">✓ Sélectionnés (${passed.length}):</strong>
+      <ul style="margin:6px 0 0 20px;padding:0">
+  `;
+  
+  passed.forEach(c => {
+    html += `<li>${escapeHtml(c.name)}: ${formatAmount(c.amount)} <span style="color:#999">(+${c.gap_percent.toFixed(2)}%)</span></li>`;
+  });
+  
+  html += `</ul></div>`;
+  
+  if (eliminated.length > 0) {
+    html += `<div><strong style="color:#E74C3C">✗ Éliminés (${eliminated.length}):</strong><ul style="margin:6px 0 0 20px;padding:0">`;
+    eliminated.forEach(c => {
+      html += `<li>${escapeHtml(c.name)}: ${formatAmount(c.amount)} <span style="color:#999">(+${c.gap_percent.toFixed(2)}%)</span></li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  document.getElementById("resultsOIContent").innerHTML = html;
+  document.getElementById("resultsOI").style.display = "block";
+}
+
+function renderOA1Results(results) {
+  const passed = results.passed || [];
+  const eliminated = results.eliminated || [];
+  
+  let html = `
+    <div style="margin-bottom:12px">
+      <strong style="color:#27AE60">✓ Sélectionnés (${passed.length}):</strong>
+      <ul style="margin:6px 0 0 20px;padding:0">
+  `;
+  
+  passed.forEach(c => {
+    html += `<li>${escapeHtml(c.name)}: ${formatAmount(c.amount)} <span style="color:#999">(+${c.gap_percent.toFixed(2)}%)</span></li>`;
+  });
+  
+  html += `</ul></div>`;
+  
+  if (eliminated.length > 0) {
+    html += `<div><strong style="color:#E74C3C">✗ Éliminés (${eliminated.length}):</strong><ul style="margin:6px 0 0 20px;padding:0">`;
+    eliminated.forEach(c => {
+      html += `<li>${escapeHtml(c.name)}: ${formatAmount(c.amount)} <span style="color:#999">(+${c.gap_percent.toFixed(2)}%)</span></li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  document.getElementById("resultsOA1Content").innerHTML = html;
+  document.getElementById("resultsOA1").style.display = "block";
+}
+
+function renderOA2Results(results) {
+  const passed = results.passed || [];
+  const eliminated = results.eliminated || [];
+  
+  let html = `
+    <div style="margin-bottom:12px">
+      <strong style="color:#27AE60">✓ Gagnant(s) (${passed.length}):</strong>
+      <ul style="margin:6px 0 0 20px;padding:0">
+  `;
+  
+  passed.forEach(c => {
+    html += `<li>${escapeHtml(c.name)}: ${formatAmount(c.amount)}</li>`;
+  });
+  
+  html += `</ul></div>`;
+  
+  if (eliminated.length > 0) {
+    html += `<div><strong style="color:#E74C3C">✗ Non sélectionnés (${eliminated.length}):</strong><ul style="margin:6px 0 0 20px;padding:0">`;
+    eliminated.forEach(c => {
+      html += `<li>${escapeHtml(c.name)}: ${formatAmount(c.amount)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  document.getElementById("resultsOA2Content").innerHTML = html;
+  document.getElementById("resultsOA2").style.display = "block";
+}
+
+async function saveEvaluation() {
+  const title = document.getElementById("evalTitle").value.trim();
+  
+  if (!title) {
+    showToast("Entrez un titre pour l'évaluation", "error");
+    return;
+  }
+  
+  try {
+    // Create evaluation
+    let response = await fetch("/api/financial-evaluation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pr_id: currentEvaluation.pr_id,
+        title: title
+      })
+    });
+    
+    let data = await response.json();
+    currentEvaluation.id = data.id;
+    
+    // Save phase data
+    const phases = currentEvaluation.phases;
+    const evalData = {
+      phases: {
+        OI: phases.OI.results ? {
+          companies: phases.OI.companies,
+          results: phases.OI.results,
+          evaluated_at: new Date().toISOString()
+        } : null,
+        OA1: phases.OA1.results ? {
+          companies: phases.OA1.companies,
+          results: phases.OA1.results,
+          evaluated_at: new Date().toISOString()
+        } : null,
+        OA2: phases.OA2.results ? {
+          companies: phases.OA2.companies,
+          results: phases.OA2.results,
+          evaluated_at: new Date().toISOString()
+        } : null
+      }
+    };
+    
+    response = await fetch(`/api/financial-evaluation/${currentEvaluation.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: title,
+        data: evalData
+      })
+    });
+    
+    if (response.ok) {
+      showToast("Évaluation enregistrée avec succès", "success");
+    } else {
+      showToast("Erreur lors de l'enregistrement", "error");
+    }
+    
+  } catch (err) {
+    console.error("[v0] Save error:", err);
+    showToast("Erreur lors de l'enregistrement", "error");
+  }
+}
+
+async function exportEvaluation() {
+  if (!currentEvaluation.id) {
+    // First save the evaluation
+    await saveEvaluation();
+  }
+  
+  if (currentEvaluation.id) {
+    window.location.href = `/api/financial-evaluation/${currentEvaluation.id}/export`;
+  }
+}
+
+function resetEvaluation() {
+  if (confirm("Êtes-vous sûr de vouloir réinitialiser cette évaluation?")) {
+    resetEvaluationUI();
+    currentEvaluation.phases = {
+      OI: { companies: [], results: null },
+      OA1: { companies: [], results: null },
+      OA2: { companies: [], results: null }
+    };
+    switchEvalTab("OI");
+  }
+}
