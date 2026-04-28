@@ -1799,7 +1799,7 @@ function renderEvaluationResults(results) {
         <tr style="background-color:${bgColor}">
           <td>${idx === 0 ? phase : ''}</td>
           <td>${r.company_name}</td>
-          <td style="text-align:right;font-weight:600">${r.amount.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} €</td>
+          <td style="text-align:right;font-weight:600">${r.amount.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} DH HT</td>
           <td style="text-align:center">${r.rank || '-'}</td>
           <td style="text-align:center">${r.gap_percent !== null ? `${r.gap_percent.toFixed(1)}%` : '-'}</td>
           <td style="font-weight:600">${r.status}</td>
