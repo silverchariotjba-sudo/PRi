@@ -21,6 +21,68 @@ def get_db():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
+def seed_sample_data():
+    """Create sample PR data if database is empty."""
+    conn = get_db()
+    existing_count = conn.execute("SELECT COUNT(*) FROM pr").fetchone()[0]
+    
+    if existing_count > 0:
+        conn.close()
+        return  # Database already has data
+    
+    # Add sample PRs
+    sample_prs = [
+        {
+            "number": "001",
+            "title": "Achat de Serveurs IT",
+            "category": "CR",
+            "status": "en-cours",
+        },
+        {
+            "number": "002",
+            "title": "Fournitures de Bureau",
+            "category": "ED",
+            "status": "en-cours",
+        },
+        {
+            "number": "003",
+            "title": "Logiciels de Gestion",
+            "category": "CR",
+            "status": "en-cours",
+        },
+        {
+            "number": "004",
+            "title": "Maintenance Équipements",
+            "category": "REG",
+            "status": "cloturee",
+        },
+    ]
+    
+    now = datetime.now().isoformat()
+    for pr in sample_prs:
+        pr_id = str(uuid.uuid4())
+        conn.execute(
+            """INSERT INTO pr (id, number, title, category, status, created_date, base_category)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (pr_id, pr["number"], pr["title"], pr["category"], pr["status"], now, pr["category"])
+        )
+        
+        # Add sample tasks
+        task_steps = PROCESSING_LIMITS[pr["category"]]["steps"]
+        for i, (step_name, _) in enumerate(task_steps.items()):
+            task_id = str(i)
+            conn.execute(
+                """INSERT INTO task (pr_id, task_id, title, done, date_prev)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (pr_id, task_id, step_name, 0 if i > 0 else 1, now)
+            )
+        
+        # Add document checklist
+        seed_pr_docs(conn, pr_id, pr["category"])
+    
+    conn.commit()
+    conn.close()
+
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -106,6 +168,35 @@ def init_db():
             FOREIGN KEY (pr_id) REFERENCES pr(id) ON DELETE CASCADE
         )
     """)
+    
+    # Financial evaluation tables
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS financial_evaluation (
+            id TEXT PRIMARY KEY,
+            pr_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            phase TEXT DEFAULT 'OI',
+            status TEXT DEFAULT 'active',
+            data TEXT,
+            created_date TEXT NOT NULL,
+            updated_date TEXT NOT NULL,
+            FOREIGN KEY (pr_id) REFERENCES pr(id) ON DELETE CASCADE
+        )
+    """)
+    
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation_phase (
+            id TEXT PRIMARY KEY,
+            evaluation_id TEXT NOT NULL,
+            phase_name TEXT NOT NULL,
+            phase_status TEXT DEFAULT 'pending',
+            companies TEXT,
+            results TEXT,
+            created_date TEXT NOT NULL,
+            FOREIGN KEY (evaluation_id) REFERENCES financial_evaluation(id) ON DELETE CASCADE
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -1331,7 +1422,7 @@ def get_processing_limits():
     return jsonify(PROCESSING_LIMITS)
 
 
-# ── DOCUMENTS MANAGEMENT ──────────���───────────────────────────────────────────
+# ── DOCUMENTS MANAGEMENT ──────────����───────────────────────────────────────────
 
 @app.route("/api/documents", methods=["GET"])
 def get_documents():
@@ -2193,5 +2284,6 @@ def delete_evaluation(eval_id):
 # ─── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
+    seed_sample_data()
     create_empty_db()
     app.run(debug=True, port=5000)
